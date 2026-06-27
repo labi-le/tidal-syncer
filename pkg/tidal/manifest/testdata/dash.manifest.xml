@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011" type="static" minBufferTime="PT2S">
+  <Period id="0">
+    <AdaptationSet mimeType="audio/mp4" contentType="audio" segmentAlignment="true">
+      <Representation id="1" codecs="flac" bandwidth="1411000" audioSamplingRate="44100">
+        <SegmentTemplate timescale="44100" initialization="https://tidal.example/dash/777/init.mp4" media="https://tidal.example/dash/777/segment_$Number$.mp4" startNumber="1">
+          <SegmentTimeline>
+            <S t="0" d="440320" r="3"/>
+            <S d="220160"/>
+          </SegmentTimeline>
+        </SegmentTemplate>
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>

@@ -1,0 +1,7 @@
+{
+  "mimeType": "audio/mp4",
+  "encryptionType": "OLD_AES",
+  "urls": [
+    "https://tidal.example/track/67890/enc0.mp4"
+  ]
+}

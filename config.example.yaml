@@ -1,0 +1,70 @@
+# tidal-syncer configuration.
+# Every field is optional; omitted fields fall back to the documented defaults.
+# Copy this file to config.yaml and edit it to suit your setup.
+
+# Filesystem locations.
+paths:
+  # Root directory where synced audio files are written.
+  music: /app/Music
+  # Path to this configuration file (used for self-reference).
+  config: /app/config.yaml
+  # Directory for the local state database and run metadata.
+  data: /app/data
+
+# Relative path rendered for each track, beneath paths.music.
+# Available placeholders include: {albumartist} {album} {track} {title} {ext}.
+# Must be parseable and contain at least {title} and {ext}.
+path_template: "{albumartist}/{album}/{track} - {title}.{ext}"
+
+# What to sync.
+scope:
+  # Sync the entire library. Takes precedence over the favorites flags below.
+  all: false
+  # Sync specific favorite collections.
+  favorites:
+    tracks: true
+    albums: true
+    playlists: true
+
+# Audio quality selection.
+quality:
+  # Preferred quality requested from TIDAL.
+  # One of: LOW, HIGH, LOSSLESS, HI_RES_LOSSLESS.
+  request: HI_RES_LOSSLESS
+  # Minimum acceptable quality. Must be a lossless tier:
+  # one of LOSSLESS, HI_RES_LOSSLESS. Lossy floors are rejected.
+  floor: LOSSLESS
+
+# Lyrics handling.
+lyrics:
+  # Embed lyrics into the audio file tags.
+  embed: true
+  # Write a sidecar .lrc file next to the track.
+  sidecar: true
+
+# Behavior when a track disappears from the remote library.
+removal:
+  # One of: keep (leave local file), mirror (delete local file),
+  # trash (move to a trash folder).
+  policy: keep
+
+# Daemon mode settings.
+daemon:
+  # Interval between automatic sync runs. Minimum 1m. Examples: 30s, 15m, 1h.
+  interval: 15m
+
+# Number of concurrent download workers. Range: 1-8.
+concurrency: 3
+
+# TIDAL OAuth client credentials. Leave empty to use the built-in defaults,
+# or supply your own registered application credentials.
+tidal_auth:
+  client_id: ""
+  client_secret: ""
+
+# Logging.
+log:
+  # One of: trace, debug, info, warn, error.
+  level: info
+  # One of: console (human-readable), json (structured).
+  format: console

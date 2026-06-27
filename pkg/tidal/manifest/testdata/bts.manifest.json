@@ -1,0 +1,8 @@
+{
+  "mimeType": "audio/mp4",
+  "encryptionType": "NONE",
+  "urls": [
+    "https://tidal.example/track/12345/part0.mp4",
+    "https://tidal.example/track/12345/part1.mp4"
+  ]
+}

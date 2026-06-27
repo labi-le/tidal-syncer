@@ -1,0 +1,37 @@
+# Keep the build context lean: only Go sources + go.mod/go.sum + embedded
+# assets (e.g. internal/store migrations) are needed to compile the binary.
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Orchestration / planning artifacts
+.omo
+
+# Build output (the image compiles from source)
+build/
+
+# Runtime bind-mount dirs: the output FLAC library and the SQLite data/lock.
+# Never needed to compile, and their files are owned by the container UID
+# (65532), which makes the build-context sender fail with "permission denied"
+# once a sync has populated them.
+Music/
+data/
+
+# Dev toolchain / CI / meta — not needed to compile the binary
+.github
+shell.nix
+Makefile
+.golangci.yml
+.goreleaser.yaml
+
+# Docker + compose (avoid self-copy and needless cache busting)
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Docs & examples
+docs/
+*.md
+config.example.yaml

@@ -1,0 +1,51 @@
+version: 2
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - id: default
+    main: "./cmd/"
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -extldflags '-static'
+      - -X {{ .ModulePath }}/internal.Version={{ .Version }}
+      - -X {{ .ModulePath }}/internal.CommitHash={{ .Commit }}
+      - -X {{ .ModulePath }}/internal.BuildTime={{ .CommitDate }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+archives:
+  - id: default
+    formats: [binary]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+release:
+  name_template: 'v{{ .Version }}'
+  make_latest: true
+nfpms:
+  - id: default
+    homepage: 'https://github.com/labi-le/tidal-syncer'
+    maintainer: 'labi-le'
+    description: "Sync TIDAL library to local storage"
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - archlinux
