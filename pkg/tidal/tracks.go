@@ -46,9 +46,9 @@ func (c *Client) Track(ctx context.Context, id string) (Track, error) {
 // PlaybackInfo fetches the playback manifest descriptor for a track at the
 // requested audio quality. It requests the STREAM playback mode and FULL asset
 // presentation. An unavailable track is reported as [ErrTrackUnavailable].
-func (c *Client) PlaybackInfo(ctx context.Context, id, quality string) (PlaybackInfo, error) {
+func (c *Client) PlaybackInfo(ctx context.Context, id string, quality Quality) (PlaybackInfo, error) {
 	query := url.Values{
-		audioQualityParam:      {quality},
+		audioQualityParam:      {string(quality)},
 		playbackModeParam:      {playbackModeStream},
 		assetPresentationParam: {assetPresentationFull},
 	}

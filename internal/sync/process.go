@@ -18,10 +18,12 @@ import (
 )
 
 const (
-	// dirMode is the permission mode applied to created destination directories.
-	// 0o755 keeps the music library world-traversable so the host user and media
-	// servers (Jellyfin, Navidrome, ...) can read it regardless of the container UID.
-	dirMode os.FileMode = 0o755
+	// musicDirMode is the permission mode applied to every directory created under
+	// the music root: destination track directories and the Playlists export
+	// directory alike. 0o755 keeps the music library world-traversable so the host
+	// user and media servers (Jellyfin, Navidrome, ...) can read it regardless of
+	// the container UID.
+	musicDirMode os.FileMode = 0o755
 	// opProcessTrack scopes the logger for the per-track pipeline.
 	opProcessTrack = "sync.processTrack"
 )
@@ -52,8 +54,12 @@ func (e *Engine) processTrack(ctx context.Context, track tidal.Track, c *counter
 	c.downloaded.Add(1)
 }
 
-// shouldSkip reports whether track is already stored as done at a quality at
-// least as good as the one currently requested. A missing record is not a skip.
+// shouldSkip reports whether track is already stored as done having been
+// requested at a tier at least as high as the one currently configured. It
+// compares the requested tier, not the obtained one, so a track whose best
+// available master is below the requested tier is downloaded once and then
+// skipped rather than re-downloaded every cycle; raising the requested tier
+// re-attempts it. A missing record is not a skip.
 func (e *Engine) shouldSkip(ctx context.Context, track tidal.Track) (bool, error) {
 	record, err := e.store.GetTrack(ctx, strconv.Itoa(track.ID))
 	if errors.Is(err, store.ErrNotFound) {
@@ -66,7 +72,7 @@ func (e *Engine) shouldSkip(ctx context.Context, track tidal.Track) (bool, error
 		return false, nil
 	}
 
-	return qualityRank(record.ObtainedQuality) >= qualityRank(e.config.Quality.Request), nil
+	return tidal.Quality(record.RequestedQuality).Rank() >= e.config.Quality.Request.Rank(), nil
 }
 
 // downloadOne resolves metadata, downloads, integrity-checks, tags and records a
@@ -83,7 +89,7 @@ func (e *Engine) downloadOne(ctx context.Context, log zerolog.Logger, track tida
 		return fmt.Errorf("render path for track %d: %w", track.ID, err)
 	}
 	dest := filepath.Join(e.config.Paths.Music, filepath.FromSlash(rel))
-	if err = os.MkdirAll(filepath.Dir(dest), dirMode); err != nil {
+	if err = os.MkdirAll(filepath.Dir(dest), musicDirMode); err != nil {
 		return fmt.Errorf("create directory for track %d: %w", track.ID, err)
 	}
 
@@ -96,7 +102,7 @@ func (e *Engine) downloadOne(ctx context.Context, log zerolog.Logger, track tida
 		Str("title", track.Title).
 		Str("artist", artist).
 		Str("album", album.Title).
-		Str("requested", e.config.Quality.Request).
+		Str("requested", string(e.config.Quality.Request)).
 		Msg("downloading")
 
 	quality, err := e.downloader.Download(ctx, strconv.Itoa(track.ID), dest)
@@ -116,7 +122,7 @@ func (e *Engine) downloadOne(ctx context.Context, log zerolog.Logger, track tida
 	log.Debug().
 		Int("track", track.ID).
 		Str("title", track.Title).
-		Str("quality", quality).
+		Str("quality", string(quality)).
 		Msg("downloaded")
 
 	return nil
@@ -193,15 +199,16 @@ func (e *Engine) writeTags(
 }
 
 // markDone records a successful download in the store.
-func (e *Engine) markDone(ctx context.Context, track tidal.Track, dest, quality string) error {
+func (e *Engine) markDone(ctx context.Context, track tidal.Track, dest string, quality tidal.Quality) error {
 	record := store.Track{
-		TidalID:         strconv.Itoa(track.ID),
-		ISRC:            track.ISRC,
-		AlbumID:         strconv.Itoa(track.Album.ID),
-		Path:            dest,
-		ObtainedQuality: quality,
-		Status:          store.StatusDone,
-		UpdatedAt:       0,
+		TidalID:          strconv.Itoa(track.ID),
+		ISRC:             track.ISRC,
+		AlbumID:          strconv.Itoa(track.Album.ID),
+		Path:             dest,
+		ObtainedQuality:  string(quality),
+		RequestedQuality: string(e.config.Quality.Request),
+		Status:           store.StatusDone,
+		UpdatedAt:        0,
 	}
 	if err := e.store.MarkTrack(ctx, record); err != nil {
 		return fmt.Errorf("record track %d: %w", track.ID, err)

@@ -29,7 +29,7 @@ docs/MANUAL_SMOKE.md  only doc file; manual smoke playbook
 | sync cycle logic | internal/sync/engine.go (SyncOnce) + process.go | enumerate → process → snapshot |
 | quality/floor | pkg/tidal/download/download.go (fetchManifest, ErrBelowFloor) + internal/sync/meta.go (qualityRank) | lossless floor enforced |
 | OAuth/login/refresh | pkg/tidal/auth/ | device flow + refresh |
-| SQLite schema | internal/store/migrations/0001_init.sql | |
+| SQLite schema | internal/store/migrations/*.sql | 0001 init; 0002 adds tracks.requested_quality |
 | path templating | internal/namer/ | hand-rolled, no text/template |
 | FLAC tagging/integrity | internal/tag/ | taglib + mewkiz/flac |
 | config schema/validation | internal/config/ | |
@@ -88,5 +88,5 @@ docker compose run --rm tidal-syncer <login|sync|daemon|health>   # one-off
 - `Music/` and `data/` must be writable by the nonroot container (UID 65532) → `chmod 777` (host user can't chown to another uid).
 - Image is **distroless** (no shell); `ffmpeg` at `/usr/local/bin/ffmpeg` but there is **no ffprobe** — inspect files with `ffmpeg -i` or a throwaway `alpine` container.
 - `docker compose run` is a one-off container NOT shown by `docker compose logs` — follow it with `docker logs -f <…-run-…>`; `make logs`/`make compose-up` are for the daemon service.
-- TIDAL account must be HiFi for `LOSSLESS`; **24-bit HI_RES_LOSSLESS needs a PKCE mobile-client auth flow that is NOT implemented** (device-flow tops out at 16-bit). Working device client: `cgiF7TQuB97BUIu3`.
+- TIDAL account must be HiFi/HiFi-Plus for `LOSSLESS`/`HI_RES_LOSSLESS`. The working device client `cgiF7TQuB97BUIu3` DOES grant 24-bit `HI_RES_LOSSLESS` over the device flow — verified end-to-end (a DASH grant demuxes to a 24-bit/48 kHz FLAC); NO PKCE/mobile-client flow is required. Caveat: the v1 `Track.AudioQuality` ("advertised") field maxes out at `LOSSLESS` and cannot express hi-res (signaled only via `mediaMetadata.tags`, currently unparsed) — judge hi-res by the GRANTED tier from `playbackinfo`, never by advertised quality.
 - `internal/version.go` makes `internal` itself an importable package; version injected via `-ldflags -X github.com/labi-le/tidal-syncer/internal.{Version,CommitHash,BuildTime}`.

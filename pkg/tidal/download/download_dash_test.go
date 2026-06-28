@@ -21,6 +21,7 @@ import (
 
 	"github.com/mewkiz/flac"
 
+	"github.com/labi-le/tidal-syncer/pkg/tidal"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/download"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/manifest"
 )
@@ -59,7 +60,7 @@ func TestDASHDemuxesToValidFLAC(t *testing.T) {
 	srv := newSegmentServer(t, stream)
 	defer srv.Close()
 
-	provider := fakeProvider{responses: map[string]fakeResponse{
+	provider := fakeProvider{responses: map[tidal.Quality]fakeResponse{
 		qualityHiRes: {mimeType: manifest.MimeDASH, manifestB64: dashManifestB64(t, srv.URL), granted: qualityHiRes},
 	}}
 	dl := download.New(provider, srv.Client(), download.WithFFmpeg(ffmpegPath))
@@ -86,7 +87,7 @@ func TestDASHCancelKillsFFmpegChild(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	provider := fakeProvider{responses: map[string]fakeResponse{
+	provider := fakeProvider{responses: map[tidal.Quality]fakeResponse{
 		qualityHiRes: {mimeType: manifest.MimeDASH, manifestB64: dashManifestB64(t, srv.URL), granted: qualityHiRes},
 	}}
 	dl := download.New(provider, srv.Client(), download.WithFFmpeg(os.Args[0]))

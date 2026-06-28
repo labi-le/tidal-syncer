@@ -56,11 +56,11 @@ daemon:
 # Number of concurrent download workers. Range: 1-8.
 concurrency: 3
 
-# TIDAL OAuth client credentials. Leave empty to use the built-in defaults,
-# or supply your own registered application credentials.
+# TIDAL OAuth client credentials. Required: supply your own registered TIDAL
+# application's client_id and client_secret.
 tidal_auth:
-  client_id: ""
-  client_secret: ""
+  client_id: "your-tidal-client-id"
+  client_secret: "your-tidal-client-secret"
 
 # Logging.
 log:

@@ -14,15 +14,16 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/labi-le/tidal-syncer/pkg/tidal"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/download"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/manifest"
 )
 
 const (
 	testTrackID         = "12345"
-	qualityHiRes        = "HI_RES_LOSSLESS"
-	qualityLossless     = "LOSSLESS"
-	qualityHigh         = "HIGH"
+	qualityHiRes        = tidal.QualityHiResLossless
+	qualityLossless     = tidal.QualityLossless
+	qualityHigh         = tidal.QualityHigh
 	codecMime           = "audio/mp4"
 	manifestNone        = "NONE"
 	partSuffix          = ".part"
@@ -38,23 +39,29 @@ var errNoSuchQuality = errors.New("fake: quality unavailable")
 type fakeResponse struct {
 	mimeType    string
 	manifestB64 string
-	granted     string
+	granted     tidal.Quality
 	err         error
 }
 
 // fakeProvider is an in-memory PlaybackProvider: it answers PlaybackInfo from a
 // quality-keyed table so tests drive the quality ladder deterministically.
 type fakeProvider struct {
-	responses map[string]fakeResponse
+	responses map[tidal.Quality]fakeResponse
 }
 
-func (f fakeProvider) PlaybackInfo(_ context.Context, _, quality string) (string, string, string, error) {
+func (f fakeProvider) PlaybackInfo(
+	_ context.Context, _ string, quality tidal.Quality,
+) (download.Playback, error) {
 	resp, ok := f.responses[quality]
 	if !ok {
-		return "", "", "", errNoSuchQuality
+		return download.Playback{}, errNoSuchQuality
 	}
 
-	return resp.mimeType, resp.manifestB64, resp.granted, resp.err
+	return download.Playback{
+		MimeType:       resp.mimeType,
+		ManifestB64:    resp.manifestB64,
+		GrantedQuality: resp.granted,
+	}, resp.err
 }
 
 // flacBytes returns opaque stream bytes; the download package never parses the
@@ -126,7 +133,7 @@ func TestBTSDownloadWritesFinalFileAtomically(t *testing.T) {
 	srv := newContentServer(body)
 	defer srv.Close()
 
-	provider := fakeProvider{responses: map[string]fakeResponse{
+	provider := fakeProvider{responses: map[tidal.Quality]fakeResponse{
 		qualityHiRes: {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityHiRes},
 	}}
 	dl := download.New(provider, srv.Client())
@@ -159,7 +166,7 @@ func TestBTSFallsBackToLosslessWhenHiResUnavailable(t *testing.T) {
 	srv := newContentServer(body)
 	defer srv.Close()
 
-	provider := fakeProvider{responses: map[string]fakeResponse{
+	provider := fakeProvider{responses: map[tidal.Quality]fakeResponse{
 		qualityLossless: {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityLossless},
 	}}
 	dl := download.New(provider, srv.Client())
@@ -191,7 +198,7 @@ func TestBTSRejectsSubFloorGrantedQuality(t *testing.T) {
 	srv := newContentServer(body)
 	defer srv.Close()
 
-	provider := fakeProvider{responses: map[string]fakeResponse{
+	provider := fakeProvider{responses: map[tidal.Quality]fakeResponse{
 		qualityHiRes:    {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityHigh},
 		qualityLossless: {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityHigh},
 	}}
@@ -220,7 +227,7 @@ func TestTruncatedStreamRemovesPartAndFails(t *testing.T) {
 	srv := newTruncatingServer(body)
 	defer srv.Close()
 
-	provider := fakeProvider{responses: map[string]fakeResponse{
+	provider := fakeProvider{responses: map[tidal.Quality]fakeResponse{
 		qualityHiRes: {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityHiRes},
 	}}
 	dl := download.New(provider, srv.Client())
@@ -247,7 +254,7 @@ func TestCancelledContextRemovesPart(t *testing.T) {
 	srv, started := newBlockingServer(flacBytes())
 	defer srv.Close()
 
-	provider := fakeProvider{responses: map[string]fakeResponse{
+	provider := fakeProvider{responses: map[tidal.Quality]fakeResponse{
 		qualityHiRes: {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityHiRes},
 	}}
 	dl := download.New(provider, srv.Client())
@@ -255,7 +262,7 @@ func TestCancelledContextRemovesPart(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	type outcome struct {
-		quality string
+		quality tidal.Quality
 		err     error
 	}
 	done := make(chan outcome, 1)

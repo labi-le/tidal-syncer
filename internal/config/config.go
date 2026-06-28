@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+
+	"github.com/labi-le/tidal-syncer/pkg/tidal"
 )
 
 // Config is the fully-resolved tidal-syncer configuration.
@@ -46,8 +48,8 @@ type Favorites struct {
 
 // Quality describes the requested and minimum acceptable audio tiers.
 type Quality struct {
-	Request string `yaml:"request"`
-	Floor   string `yaml:"floor"`
+	Request tidal.Quality `yaml:"request"`
+	Floor   tidal.Quality `yaml:"floor"`
 }
 
 // Lyrics controls how lyrics are persisted.
@@ -88,12 +90,9 @@ const (
 	removalMirror = "mirror"
 	removalTrash  = "trash"
 
-	qualityLossless      = "LOSSLESS"
-	qualityHiResLossless = "HI_RES_LOSSLESS"
-
 	defaultRemovalPolicy  = removalKeep
-	defaultQualityRequest = qualityHiResLossless
-	defaultQualityFloor   = qualityLossless
+	defaultQualityRequest = tidal.QualityHiResLossless
+	defaultQualityFloor   = tidal.QualityLossless
 
 	defaultInterval    = 15 * time.Minute
 	defaultConcurrency = 3

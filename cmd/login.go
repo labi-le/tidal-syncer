@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -14,14 +13,6 @@ import (
 	"github.com/labi-le/tidal-syncer/internal/store"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/auth"
 )
-
-// defaultClientID is the bundled TIDAL OAuth client_id. It is injected at build
-// time via -ldflags and overridden at runtime by config tidal_auth.client_id.
-var defaultClientID string
-
-// defaultClientSecret is the bundled TIDAL OAuth client_secret. It is injected
-// at build time via -ldflags and overridden by config tidal_auth.client_secret.
-var defaultClientSecret string
 
 // newLoginCmd builds the `login` subcommand that runs the TIDAL device
 // authorization flow and persists the resulting token through the store.
@@ -60,20 +51,19 @@ func runLogin(ctx context.Context, configPath string, verbose bool, lg zerolog.L
 		return fmt.Errorf("login: migrate store: %w", err)
 	}
 
-	clientID, clientSecret := resolveCredentials(cfg.TidalAuth)
-	client := auth.New(clientID, clientSecret, authstore.New(st), opts...)
+	client := auth.New(cfg.TidalAuth.ClientID, cfg.TidalAuth.ClientSecret, authstore.New(st), opts...)
 
 	err = driveDeviceAuth(ctx, client, func(device auth.DeviceAuth) {
 		// Emit the verification link at no level so it surfaces regardless of the
 		// configured log level: this is the one line the user must act on.
 		lg.Log().
-			Str("url", device.VerificationURIComplete).
+			Str("url", fmt.Sprintf("https://%s", device.VerificationURIComplete)).
 			Msg("open this link in your browser and approve the login")
 	})
 	if err != nil {
 		if errors.Is(err, auth.ErrDeadCredentials) {
 			lg.Error().
-				Msg("TIDAL rejected the bundled client credentials; set tidal_auth.client_id and tidal_auth.client_secret in your config")
+				Msg("TIDAL rejected the client credentials; set tidal_auth.client_id and tidal_auth.client_secret in your config")
 		}
 
 		return fmt.Errorf("login: %w", err)
@@ -104,10 +94,4 @@ func driveDeviceAuth(ctx context.Context, authClient *auth.Client, onLink func(a
 	}
 
 	return nil
-}
-
-// resolveCredentials prefers the config-supplied credentials and falls back to
-// the build-time ldflag defaults when a field is empty.
-func resolveCredentials(cfg config.TidalAuth) (string, string) {
-	return cmp.Or(cfg.ClientID, defaultClientID), cmp.Or(cfg.ClientSecret, defaultClientSecret)
 }

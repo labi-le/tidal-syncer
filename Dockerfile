@@ -18,7 +18,7 @@ RUN go mod download
 
 COPY . .
 
-# Build metadata injected into github.com/labi-le/tidal-syncer/internal.* —
+# Build metadata injected into github.com/labi-le/tidal-syncer/internal/buildinfo.* —
 # mirrors the Makefile ldflags contract. Pass real values at build time with:
 #   docker build \
 #     --build-arg VERSION="$(git describe --tags --always)" \
@@ -33,9 +33,9 @@ ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
 RUN go build \
         -trimpath \
         -ldflags="-s -w -extldflags '-static' \
-            -X 'github.com/labi-le/tidal-syncer/internal.Version=${VERSION}' \
-            -X 'github.com/labi-le/tidal-syncer/internal.CommitHash=${COMMIT_HASH}' \
-            -X 'github.com/labi-le/tidal-syncer/internal.BuildTime=${BUILD_TIME}'" \
+            -X 'github.com/labi-le/tidal-syncer/internal/buildinfo.Version=${VERSION}' \
+            -X 'github.com/labi-le/tidal-syncer/internal/buildinfo.CommitHash=${COMMIT_HASH}' \
+            -X 'github.com/labi-le/tidal-syncer/internal/buildinfo.BuildTime=${BUILD_TIME}'" \
         -o /out/tidal-syncer \
         ./cmd
 

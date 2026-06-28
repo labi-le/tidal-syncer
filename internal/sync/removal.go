@@ -70,7 +70,7 @@ func NewRemover(p RemoverParams) *Remover {
 func (r *Remover) Reconcile(ctx context.Context, current []store.SnapshotItem) error {
 	logger := ctxlog.Op(r.logger, opReconcile)
 
-	_, removed, err := r.store.DiffSnapshot(ctx, snapshotKindTracks, current)
+	_, removed, err := r.store.DiffSnapshot(ctx, SnapshotKindTracks, current)
 	if err != nil {
 		return fmt.Errorf("removal: diff snapshot: %w", err)
 	}
@@ -218,7 +218,7 @@ func (r *Remover) moveToTrash(src string) (bool, error) {
 	}
 	dest := filepath.Join(r.music, trashDirName, rel)
 
-	if err = os.MkdirAll(filepath.Dir(dest), dirMode); err != nil {
+	if err = os.MkdirAll(filepath.Dir(dest), musicDirMode); err != nil {
 		return false, fmt.Errorf("create trash dir for %q: %w", src, err)
 	}
 	if err = os.Rename(src, dest); err != nil {

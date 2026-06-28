@@ -14,6 +14,7 @@ import (
 	"github.com/labi-le/tidal-syncer/internal/ctxlog"
 	"github.com/labi-le/tidal-syncer/internal/namer"
 	"github.com/labi-le/tidal-syncer/pkg/tidal"
+	"github.com/labi-le/tidal-syncer/pkg/tidal/download"
 )
 
 const (
@@ -21,13 +22,8 @@ const (
 	playlistsDirName = "Playlists"
 	// playlistExt is the file extension of an exported playlist.
 	playlistExt = ".m3u8"
-	// partSuffix names the temporary file written before its atomic rename.
-	partSuffix = ".part"
 	// m3uHeader is the mandatory first line of an extended M3U playlist.
 	m3uHeader = "#EXTM3U\n"
-	// playlistDirMode is the permission mode for the created Playlists directory.
-	// 0o755 keeps it world-traversable like the rest of the music library.
-	playlistDirMode os.FileMode = 0o755
 	// playlistFileMode is the permission mode for a written .m3u8 file. 0o644 keeps
 	// playlists world-readable for the host user and media servers.
 	playlistFileMode os.FileMode = 0o644
@@ -65,7 +61,7 @@ func NewPlaylistWriter(client TidalClient, cfg config.Config, logger zerolog.Log
 func (w *PlaylistWriter) WritePlaylists(ctx context.Context) error {
 	log := ctxlog.Op(w.logger, opWritePlaylists)
 	dir := filepath.Join(w.config.Paths.Music, playlistsDirName)
-	if err := os.MkdirAll(dir, playlistDirMode); err != nil {
+	if err := os.MkdirAll(dir, musicDirMode); err != nil {
 		return fmt.Errorf("create playlists directory: %w", err)
 	}
 
@@ -186,7 +182,7 @@ func writeM3U8(dest string, entries []playlistEntry) error {
 		buf.WriteByte('\n')
 	}
 
-	tmp := dest + partSuffix
+	tmp := dest + download.PartSuffix
 	if err := os.WriteFile(tmp, []byte(buf.String()), playlistFileMode); err != nil {
 		return fmt.Errorf("write playlist %q: %w", dest, err)
 	}

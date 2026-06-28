@@ -8,14 +8,14 @@ Flat `package main` — cobra CLI. Every subcommand is one file at `cmd/` root (
 |------|------|
 | root cmd assembly / flags / logger | main.go (`newRootCmd`, `PersistentPreRun`) |
 | add a subcommand | new cmd/<name>.go + register in `newRootCmd` |
-| OAuth login flow | login.go (`driveDeviceAuth`, `resolveCredentials`) |
+| OAuth login flow | login.go (`driveDeviceAuth`) |
 | one sync cycle wiring | sync.go (`runSync` → `executeSync`) |
 | daemon poll loop | daemon.go (`runDaemon`, `runDaemonCycle`) |
 | health + selfcheck + ffmpeg resolution | health.go |
 
 ## KEY WIRING
 - **main.go**: `newRootCmd` builds the cobra tree. Logger built once in `PersistentPreRun` via `initLogger(verbose)` (bootstrap: Info, or Trace+Caller when `--verbose`), injected as a `*zerolog.Logger` pointer. `leveledLogger(base, cfg.Log.Level, verbose)` re-levels AFTER each subcommand loads its config; `parseLogLevel` maps the string. Flags: `--config`, `--verbose`. (The `--log-level` flag was removed.)
-- **login.go**: device-authorization grant. `resolveCredentials(cfg.TidalAuth)` is config-first with ldflag `defaultClientID`/`defaultClientSecret` fallback — reused by sync.
+- **login.go**: device-authorization grant. Credentials come straight from config (`cfg.TidalAuth.ClientID`/`ClientSecret`), shared with sync; `config.Load` rejects empty creds up front (`tidal_auth.client_id is required`), while present-but-invalid creds → TIDAL 400/401 → `auth.ErrDeadCredentials` with actionable guidance.
 - **sync.go**: `runSync` = `config.Load` → `store.Open`+`Migrate` → `lock.FileLock.TryAcquire` → `download.SweepStale` → `executeSync`. `--once` is the only mode (else `errOnceOnly`). `newSyncHTTPClient` tunes dial/TLS/response-header timeouts but sets NO overall client timeout, so streaming downloads aren't truncated. `playbackProvider` adapts `*tidal.Client` to `download.PlaybackProvider` (4-return).
 - **daemon.go**: poll loop; `runDaemonCycle` classifies per-cycle errors.
 - **health.go**: hosts BOTH `health` and `selfcheck`. `resolveFFmpegPath` = `TIDAL_FFMPEG` env else `/usr/local/bin/ffmpeg`; `checkFFmpeg` execs `ffmpeg -version`.

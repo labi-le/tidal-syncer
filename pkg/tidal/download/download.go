@@ -21,38 +21,46 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/labi-le/tidal-syncer/pkg/tidal"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/manifest"
 )
 
-const (
-	// qualityHiResLossless is the highest audio tier tidal-syncer requests.
-	qualityHiResLossless = "HI_RES_LOSSLESS"
-	// qualityLossless is the minimum acceptable tier: the lossless floor.
-	// tidal-syncer never downloads lossy audio.
-	qualityLossless = "LOSSLESS"
-	// partSuffix names the temporary file that receives stream bytes before the
-	// atomic rename into the final destination path.
-	partSuffix = ".part"
-	// tempFileMode is the permission mode of the temporary ".part" file, which is
-	// renamed into the final FLAC. 0o644 keeps the music library world-readable for
-	// the host user and media servers regardless of the container UID.
-	tempFileMode = 0o644
-)
+// PartSuffix names the temporary file that receives stream bytes before the
+// atomic rename into the final destination path. It is the single source of the
+// part-file suffix for every writer that stages through "<dest>.part".
+const PartSuffix = ".part"
+
+// tempFileMode is the permission mode of the temporary ".part" file, which is
+// renamed into the final FLAC. 0o644 keeps the music library world-readable for
+// the host user and media servers regardless of the container UID.
+const tempFileMode = 0o644
+
+// Playback is the resolved playback manifest descriptor for a track: the
+// manifest's MIME type, its base64-encoded body, and the audio quality TIDAL
+// actually granted. Named fields avoid the transposition hazard of two adjacent
+// manifest strings returned positionally.
+type Playback struct {
+	// MimeType selects how ManifestB64 must be parsed, for example
+	// "application/dash+xml" or "application/vnd.tidal.bts".
+	MimeType string
+	// ManifestB64 is the base64-encoded playback manifest body.
+	ManifestB64 string
+	// GrantedQuality is the audio tier TIDAL actually granted, which may be lower
+	// than requested; callers must enforce their own quality floor on it.
+	GrantedQuality tidal.Quality
+}
 
 // PlaybackProvider resolves the playback manifest for a track at a requested
 // quality. The concrete *tidal.Client satisfies this interface; tests supply a
 // fake. Implementations must be safe for concurrent use by multiple goroutines.
 type PlaybackProvider interface {
-	// PlaybackInfo returns the manifest MIME type, the base64-encoded manifest
-	// body, and the audio quality TIDAL actually granted for trackID at the
-	// requested quality, or an error when that quality is unavailable. The
-	// granted quality may be lower than requested: TIDAL answers with HTTP 200
-	// and a lower tier (for example HIGH/AAC) when the account or track does not
-	// support the requested lossless tier, so callers must enforce their own
-	// quality floor on grantedQuality rather than trust the request.
-	PlaybackInfo(
-		ctx context.Context, trackID, quality string,
-	) (manifestMimeType, manifestBase64, grantedQuality string, err error)
+	// PlaybackInfo returns the [Playback] descriptor for trackID at the requested
+	// quality, or an error when that quality is unavailable. The granted quality
+	// may be lower than requested: TIDAL answers with HTTP 200 and a lower tier
+	// (for example HIGH/AAC) when the account or track does not support the
+	// requested lossless tier, so callers must enforce their own quality floor on
+	// Playback.GrantedQuality rather than trust the request.
+	PlaybackInfo(ctx context.Context, trackID string, quality tidal.Quality) (Playback, error)
 }
 
 // Downloader downloads Tidal tracks to local files. It is safe for concurrent
@@ -103,13 +111,13 @@ func WithFFmpeg(path string) Option {
 // DASH demux fails, [ErrUnexpectedStatus] for a non-200 stream response,
 // [ErrBelowFloor] when TIDAL grants only a sub-lossless tier (so nothing is
 // written), and [ErrDiskFull] when the destination volume runs out of space.
-func (d *Downloader) Download(ctx context.Context, trackID, destPath string) (string, error) {
-	mimeType, manifestB64, granted, err := d.fetchManifest(ctx, trackID)
+func (d *Downloader) Download(ctx context.Context, trackID, destPath string) (tidal.Quality, error) {
+	playback, err := d.fetchManifest(ctx, trackID)
 	if err != nil {
 		return "", err
 	}
 
-	parsed, err := manifest.Parse(mimeType, manifestB64)
+	parsed, err := manifest.Parse(playback.MimeType, playback.ManifestB64)
 	if err != nil {
 		if errors.Is(err, manifest.ErrEncrypted) {
 			return "", fmt.Errorf("download: track %q: %w", trackID, ErrEncryptedSkip)
@@ -127,7 +135,7 @@ func (d *Downloader) Download(ctx context.Context, trackID, destPath string) (st
 		return "", err
 	}
 
-	return granted, nil
+	return playback.GrantedQuality, nil
 }
 
 // producerFor returns the part-file producer for a parsed manifest: BTS streams
@@ -156,40 +164,32 @@ func (d *Downloader) producerFor(
 // lossless floor. It descends the ladder when a tier is unavailable, rejects a
 // granted tier below the floor with [ErrBelowFloor] (TIDAL answers HTTP 200 with
 // a lossy stream when an account lacks lossless), and aborts if ctx is cancelled.
-func (d *Downloader) fetchManifest(ctx context.Context, trackID string) (string, string, string, error) {
+func (d *Downloader) fetchManifest(ctx context.Context, trackID string) (Playback, error) {
 	var lastErr error
-	var subFloor string
-	for _, quality := range [...]string{qualityHiResLossless, qualityLossless} {
-		mimeType, manifestB64, granted, err := d.provider.PlaybackInfo(ctx, trackID, quality)
+	var subFloor tidal.Quality
+	for _, quality := range [...]tidal.Quality{tidal.QualityHiResLossless, tidal.QualityLossless} {
+		playback, err := d.provider.PlaybackInfo(ctx, trackID, quality)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
-				return "", "", "", fmt.Errorf("download: playback info for track %q: %w", trackID, ctxErr)
+				return Playback{}, fmt.Errorf("download: playback info for track %q: %w", trackID, ctxErr)
 			}
 			lastErr = err
 
 			continue
 		}
-		if meetsLosslessFloor(granted) {
-			return mimeType, manifestB64, granted, nil
+		if playback.GrantedQuality.MeetsLosslessFloor() {
+			return playback, nil
 		}
-		subFloor = granted
+		subFloor = playback.GrantedQuality
 	}
 
 	if subFloor != "" {
-		return "", "", "", fmt.Errorf(
+		return Playback{}, fmt.Errorf(
 			"download: track %q: granted quality %q is below floor %q; account may not support lossless: %w",
-			trackID, subFloor, qualityLossless, ErrBelowFloor)
+			trackID, subFloor, tidal.QualityLossless, ErrBelowFloor)
 	}
 
-	return "", "", "", fmt.Errorf("download: no available quality for track %q: %w", trackID, lastErr)
-}
-
-// meetsLosslessFloor reports whether the tier TIDAL granted is at or above the
-// lossless floor: it admits exactly the two lossless tiers (LOSSLESS and
-// HI_RES_LOSSLESS). Any lossy tier (HIGH/AAC, LOW/AAC) or an unrecognized tier
-// is below the floor and must never be written to a .flac file.
-func meetsLosslessFloor(granted string) bool {
-	return granted == qualityLossless || granted == qualityHiResLossless
+	return Playback{}, fmt.Errorf("download: no available quality for track %q: %w", trackID, lastErr)
 }
 
 // writeAtomic opens a temporary "<destPath>.part" file on destPath's own
@@ -197,7 +197,7 @@ func meetsLosslessFloor(granted string) bool {
 // temporary file is removed on any error, so destPath is only ever created from
 // a complete download.
 func (d *Downloader) writeAtomic(destPath string, produce func(part *os.File) error) error {
-	partPath := destPath + partSuffix
+	partPath := destPath + PartSuffix
 
 	part, err := os.OpenFile(partPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, tempFileMode)
 	if err != nil {

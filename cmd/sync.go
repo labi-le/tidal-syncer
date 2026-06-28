@@ -28,9 +28,6 @@ const (
 	// lockFileName is the file, under the data directory, whose flock serializes
 	// sync runs across processes.
 	lockFileName = "lock"
-	// snapshotKindTracks is the favorites-snapshot kind the engine enumerates and
-	// the removal reconciler diffs; it must match internal/sync's snapshot kind.
-	snapshotKindTracks = "tracks"
 )
 
 const (
@@ -129,14 +126,13 @@ func runSync(ctx context.Context, configPath string, verbose bool, logger zerolo
 // one sync cycle, exports playlists when in scope, and logs the resulting
 // summary. It runs with the data-directory lock held.
 func executeSync(ctx context.Context, cfg config.Config, st *store.Store, logger zerolog.Logger) error {
-	clientID, clientSecret := resolveCredentials(cfg.TidalAuth)
-	authClient := auth.New(clientID, clientSecret, authstore.New(st))
+	authClient := auth.New(cfg.TidalAuth.ClientID, cfg.TidalAuth.ClientSecret, authstore.New(st))
 	tidalClient := tidal.New(auth.NewTokenSource(authClient))
 	httpClient := newSyncHTTPClient()
 
 	engine := synceng.NewEngine(synceng.Params{
 		Client:     tidalClient,
-		Downloader: synceng.NewDownloader(playbackProvider{client: tidalClient}, httpClient),
+		Downloader: synceng.NewDownloader(synceng.NewPlaybackProvider(tidalClient), httpClient),
 		Covers:     synceng.NewCoverFetcher(httpClient),
 		Store:      st,
 		Config:     cfg,
@@ -154,7 +150,7 @@ func executeSync(ctx context.Context, cfg config.Config, st *store.Store, logger
 		return fmt.Errorf("sync: reconcile removals: %w", err)
 	}
 
-	if err = st.ReplaceSnapshot(ctx, snapshotKindTracks, current); err != nil {
+	if err = st.ReplaceSnapshot(ctx, synceng.SnapshotKindTracks, current); err != nil {
 		return fmt.Errorf("sync: refresh snapshot: %w", err)
 	}
 
@@ -205,23 +201,4 @@ func newSyncHTTPClient() *http.Client {
 			IdleConnTimeout:       syncIdleConnTimeout,
 		},
 	}
-}
-
-// playbackProvider adapts *tidal.Client to download.PlaybackProvider, flattening
-// the PlaybackInfo struct into the (mimeType, manifest, grantedQuality) tuple the
-// downloader consumes.
-type playbackProvider struct {
-	client *tidal.Client
-}
-
-// PlaybackInfo resolves the playback manifest for trackID at quality, returning
-// its MIME type, base64-encoded body, and the audio quality TIDAL actually
-// granted, which the downloader enforces against its lossless floor.
-func (p playbackProvider) PlaybackInfo(ctx context.Context, trackID, quality string) (string, string, string, error) {
-	info, err := p.client.PlaybackInfo(ctx, trackID, quality)
-	if err != nil {
-		return "", "", "", fmt.Errorf("sync: playback info for track %q: %w", trackID, err)
-	}
-
-	return info.ManifestMimeType, info.Manifest, info.AudioQuality, nil
 }

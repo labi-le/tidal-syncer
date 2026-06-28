@@ -60,7 +60,7 @@ type Track struct {
 	// Explicit reports whether the track carries an explicit-content flag.
 	Explicit bool `json:"explicit"`
 	// AudioQuality is the highest audio tier TIDAL advertises for the track.
-	AudioQuality string `json:"audioQuality"`
+	AudioQuality Quality `json:"audioQuality"`
 	// Artists are the credited artists, primary first.
 	Artists []Artist `json:"artists"`
 	// Album references the album the track appears on.
@@ -137,7 +137,7 @@ type PlaybackInfo struct {
 	// TrackID echoes the requested track id.
 	TrackID int `json:"trackId"`
 	// AudioQuality is the audio tier the manifest actually provides.
-	AudioQuality string `json:"audioQuality"`
+	AudioQuality Quality `json:"audioQuality"`
 	// ManifestMimeType selects how Manifest must be parsed, for example
 	// "application/dash+xml" or "application/vnd.tidal.bts".
 	ManifestMimeType string `json:"manifestMimeType"`

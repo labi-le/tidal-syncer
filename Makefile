@@ -13,9 +13,9 @@ COMMIT_HASH=$(shell git rev-parse --short HEAD)
 BUILD_TIMESTAMP=$(shell date '+%Y-%m-%dT%H:%M:%S')
 
 FULL_PACKAGE=$(shell go list -m)
-LDFLAGS=-ldflags="-X '${FULL_PACKAGE}/internal.Version=${VERSION}' \
-                  -X '${FULL_PACKAGE}/internal.CommitHash=${COMMIT_HASH}' \
-                  -X '${FULL_PACKAGE}/internal.BuildTime=${BUILD_TIMESTAMP}' \
+LDFLAGS=-ldflags="-X '${FULL_PACKAGE}/internal/buildinfo.Version=${VERSION}' \
+                  -X '${FULL_PACKAGE}/internal/buildinfo.CommitHash=${COMMIT_HASH}' \
+                  -X '${FULL_PACKAGE}/internal/buildinfo.BuildTime=${BUILD_TIMESTAMP}' \
                   -s -w \
                   -extldflags '-static'"
 

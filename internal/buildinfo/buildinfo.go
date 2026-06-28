@@ -1,5 +1,5 @@
-// Package internal holds build-time metadata injected via ldflags.
-package internal
+// Package buildinfo holds build-time metadata injected via ldflags.
+package buildinfo
 
 // Version is the semantic version tag, injected at build time via -ldflags.
 var Version string

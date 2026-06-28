@@ -476,6 +476,7 @@ linters:
           - bodyclose
           - dupl
           - errcheck
+          - exhaustive
           - funlen
           - goconst
           - gosec

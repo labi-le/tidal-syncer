@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/labi-le/tidal-syncer/pkg/tidal"
 )
 
 const (
@@ -29,11 +31,17 @@ func (c Config) Validate() error {
 	if err := validateInterval(c.Daemon.Interval); err != nil {
 		return err
 	}
-	if err := requireOneOf("quality.floor", c.Quality.Floor,
-		[]string{qualityLossless, qualityHiResLossless}); err != nil {
+	if err := requireOneOf("quality.floor", string(c.Quality.Floor),
+		[]string{string(tidal.QualityLossless), string(tidal.QualityHiResLossless)}); err != nil {
 		return err
 	}
 	if err := validatePathTemplate(c.PathTemplate); err != nil {
+		return err
+	}
+	if err := requireNonEmpty("tidal_auth.client_id", c.TidalAuth.ClientID); err != nil {
+		return err
+	}
+	if err := requireNonEmpty("tidal_auth.client_secret", c.TidalAuth.ClientSecret); err != nil {
 		return err
 	}
 	return nil
@@ -44,6 +52,13 @@ func requireOneOf(field, value string, allowed []string) error {
 		return nil
 	}
 	return fmt.Errorf("%s %q is invalid: must be one of %v", field, value, allowed)
+}
+
+func requireNonEmpty(field, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	return nil
 }
 
 func validateConcurrency(n int) error {

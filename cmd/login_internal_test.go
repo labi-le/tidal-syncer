@@ -1,8 +1,8 @@
 // White-box tests for the login command wiring. The file is named with the
 // `internal_test.go` suffix so the testpackage linter permits package main
 // (its skip-regexp covers export/internal test files), letting the tests drive
-// the unexported runLogin/resolveCredentials directly while injecting a mock
-// OAuth base URL through auth.Option.
+// the unexported runLogin directly while injecting a mock OAuth base URL
+// through auth.Option.
 
 package main
 
@@ -22,7 +22,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/labi-le/tidal-syncer/internal/authstore"
-	"github.com/labi-le/tidal-syncer/internal/config"
 	"github.com/labi-le/tidal-syncer/internal/store"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/auth"
 )
@@ -79,7 +78,7 @@ func writeLoginConfig(t *testing.T, dataDir string) string {
 	t.Helper()
 
 	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
-	content := fmt.Sprintf("paths:\n  data: %q\n", dataDir)
+	content := fmt.Sprintf("paths:\n  data: %q\ntidal_auth:\n  client_id: test-id\n  client_secret: test-secret\n", dataDir)
 	if err := os.WriteFile(cfgPath, []byte(content), configFileMode); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -172,30 +171,6 @@ func TestRunLoginMissingConfigFails(t *testing.T) {
 	err := runLogin(t.Context(), filepath.Join(t.TempDir(), "nonexistent.yaml"), false, lg)
 	if err == nil {
 		t.Fatal("expected error for missing config file")
-	}
-}
-
-func TestResolveCredentials(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		in      config.TidalAuth
-		wantID  string
-		wantSec string
-	}{
-		{"config overrides defaults", config.TidalAuth{ClientID: "cfg-id", ClientSecret: "cfg-secret"}, "cfg-id", "cfg-secret"},
-		{"empty falls back to ldflag defaults", config.TidalAuth{}, defaultClientID, defaultClientSecret},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			id, secret := resolveCredentials(tc.in)
-			if id != tc.wantID || secret != tc.wantSec {
-				t.Errorf("got (%q, %q), want (%q, %q)", id, secret, tc.wantID, tc.wantSec)
-			}
-		})
 	}
 }
 

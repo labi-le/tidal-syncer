@@ -8,24 +8,6 @@ import (
 	"github.com/labi-le/tidal-syncer/pkg/tidal"
 )
 
-// Audio quality tier identifiers, highest to lowest, as advertised by TIDAL.
-const (
-	qualityHiResLossless = "HI_RES_LOSSLESS"
-	qualityLossless      = "LOSSLESS"
-	qualityHigh          = "HIGH"
-	qualityLow           = "LOW"
-)
-
-// Comparable ranks for the quality tiers; a higher rank is a better tier. An
-// unrecognized tier ranks lowest so it never satisfies a skip check.
-const (
-	rankUnknown  = 0
-	rankLow      = 1
-	rankHigh     = 2
-	rankLossless = 3
-	rankHiRes    = 4
-)
-
 // artistTypeMain marks the primary (non-featured) artist credit.
 const artistTypeMain = "MAIN"
 
@@ -80,22 +62,6 @@ func primaryArtist(artists []tidal.Artist) string {
 	}
 
 	return ""
-}
-
-// qualityRank maps a quality tier identifier to its comparable rank.
-func qualityRank(quality string) int {
-	switch quality {
-	case qualityHiResLossless:
-		return rankHiRes
-	case qualityLossless:
-		return rankLossless
-	case qualityHigh:
-		return rankHigh
-	case qualityLow:
-		return rankLow
-	default:
-		return rankUnknown
-	}
 }
 
 // yearFromDate extracts the leading year from an ISO-8601 release date.

@@ -10,7 +10,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
-	"github.com/labi-le/tidal-syncer/internal"
+	"github.com/labi-le/tidal-syncer/internal/buildinfo"
 )
 
 // flags carries persistent root flag values bound by cobra.
@@ -118,9 +118,9 @@ func newVersionCmd(lg *zerolog.Logger) *cobra.Command {
 		Short: "Print build version information",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			lg.Info().
-				Str("version", internal.Version).
-				Str("commit", internal.CommitHash).
-				Str("built", internal.BuildTime).
+				Str("version", buildinfo.Version).
+				Str("commit", buildinfo.CommitHash).
+				Str("built", buildinfo.BuildTime).
 				Msg("version")
 
 			return nil

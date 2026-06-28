@@ -6,14 +6,14 @@ Thin single-writer SQLite cache (`modernc.org/sqlite`, pure-Go, no CGO). Persist
 | Task | File |
 |------|------|
 | open / migrate / pragmas | store.go |
-| schema (DDL) | migrations/0001_init.sql |
+| schema (DDL) | migrations/*.sql |
 | OAuth token (single row) | tokens.go |
 | per-track download state | tracks.go |
 | favorites snapshot + diff | snapshot.go |
 
-## SCHEMA (migrations/0001_init.sql)
+## SCHEMA (migrations/*.sql)
 - `tokens` — PK `id` CHECK(id=1): exactly ONE row. Cols: access/refresh/expires_at/user_id/country_code/session_id.
-- `tracks` — PK `tidal_id`; `status` CHECK in ('pending','done','failed'); index `idx_tracks_status`.
+- `tracks` — PK `tidal_id`; cols include `obtained_quality` + `requested_quality` (tier requested at download time — drives the no-re-download skip in `internal/sync`); `status` CHECK in ('pending','done','failed'); index `idx_tracks_status`. **0002** adds `requested_quality`, backfilled from `obtained_quality` for done rows.
 - `favorites_snapshot` — PK (kind, tidal_id); diffs added/removed between runs.
 - Migration runner: embedded FS, records applied versions in `schema_migrations`, parses leading numeric filename prefix.
 

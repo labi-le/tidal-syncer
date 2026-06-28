@@ -27,8 +27,9 @@ const (
 	minWorkers = 1
 	// defaultLimiterBurst is the burst of the fallback unlimited rate limiter.
 	defaultLimiterBurst = 1
-	// snapshotKindTracks names the favorites snapshot the engine refreshes.
-	snapshotKindTracks = "tracks"
+	// SnapshotKindTracks names the favorites snapshot the engine enumerates and the
+	// removal reconciler diffs; the cmd layer persists the run under this same kind.
+	SnapshotKindTracks = "tracks"
 	// componentField labels every log line emitted by the engine.
 	componentField = "sync"
 )

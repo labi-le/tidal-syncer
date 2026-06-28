@@ -56,8 +56,8 @@ func TestLoadExampleMatchesExpected(t *testing.T) {
 		Daemon:      config.Daemon{Interval: exampleInterval},
 		Concurrency: exampleConcurrency,
 		TidalAuth: config.TidalAuth{
-			ClientID:     "",
-			ClientSecret: "",
+			ClientID:     "your-tidal-client-id",
+			ClientSecret: "your-tidal-client-secret",
 		},
 		Log: config.Log{
 			Level:  "info",
@@ -73,7 +73,7 @@ func TestLoadExampleMatchesExpected(t *testing.T) {
 func TestLoadAppliesDefaultsForOmittedFields(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "partial.yaml")
-	partial := fmt.Sprintf("concurrency: %d\n", fileConcurrency)
+	partial := fmt.Sprintf("concurrency: %d\ntidal_auth:\n  client_id: id\n  client_secret: secret\n", fileConcurrency)
 	if err := os.WriteFile(path, []byte(partial), secureFileMode); err != nil {
 		t.Fatalf("write partial config: %v", err)
 	}
@@ -152,11 +152,21 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 			mutate:     func(c *config.Config) { c.PathTemplate = "{title}.{ext" },
 			wantSubstr: []string{"path_template"},
 		},
+		{
+			name:       "tidal_auth client_id empty",
+			mutate:     func(c *config.Config) { c.TidalAuth.ClientID = "" },
+			wantSubstr: []string{"tidal_auth.client_id"},
+		},
+		{
+			name:       "tidal_auth client_secret empty",
+			mutate:     func(c *config.Config) { c.TidalAuth.ClientSecret = "" },
+			wantSubstr: []string{"tidal_auth.client_secret"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := config.Defaults()
+			c := validConfig()
 			tt.mutate(&c)
 
 			err := c.Validate()
@@ -173,14 +183,14 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 	}
 }
 
-func TestValidateAcceptsDefaults(t *testing.T) {
-	if err := config.Defaults().Validate(); err != nil {
-		t.Errorf("Defaults().Validate() = %v, want nil", err)
+func TestValidateAcceptsValidConfig(t *testing.T) {
+	if err := validConfig().Validate(); err != nil {
+		t.Errorf("validConfig().Validate() = %v, want nil", err)
 	}
 }
 
 func TestValidateAcceptsHiResFloor(t *testing.T) {
-	c := config.Defaults()
+	c := validConfig()
 	c.Quality.Floor = "HI_RES_LOSSLESS"
 	if err := c.Validate(); err != nil {
 		t.Errorf("HI_RES_LOSSLESS floor should be valid, got %v", err)
@@ -225,4 +235,11 @@ func TestLoadRejectsDirectory(t *testing.T) {
 	if !strings.Contains(err.Error(), "directory") {
 		t.Errorf("error %q should mention directory", err.Error())
 	}
+}
+
+func validConfig() config.Config {
+	c := config.Defaults()
+	c.TidalAuth = config.TidalAuth{ClientID: "client-id", ClientSecret: "client-secret"}
+
+	return c
 }

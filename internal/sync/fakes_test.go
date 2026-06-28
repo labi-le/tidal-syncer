@@ -87,12 +87,12 @@ func (f *fakeClient) Lyrics(_ context.Context, id string) (tidal.Lyrics, error) 
 // per track id and failing the ids listed in failIDs.
 type fakeDownloader struct {
 	src     string
-	quality string
+	quality tidal.Quality
 	failIDs map[string]bool
 	calls   sync.Map
 }
 
-func (d *fakeDownloader) Download(_ context.Context, trackID, destPath string) (string, error) {
+func (d *fakeDownloader) Download(_ context.Context, trackID, destPath string) (tidal.Quality, error) {
 	recordCall(&d.calls, trackID)
 	if d.failIDs[trackID] {
 		return "", fmt.Errorf("fake: simulated download failure for track %s", trackID)

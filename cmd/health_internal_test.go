@@ -25,7 +25,7 @@ func writeHealthConfig(t *testing.T, dataDir string) string {
 	t.Helper()
 
 	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
-	content := fmt.Sprintf("paths:\n  data: %q\n", dataDir)
+	content := fmt.Sprintf("paths:\n  data: %q\ntidal_auth:\n  client_id: test-id\n  client_secret: test-secret\n", dataDir)
 	if err := os.WriteFile(cfgPath, []byte(content), healthConfigFileMode); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

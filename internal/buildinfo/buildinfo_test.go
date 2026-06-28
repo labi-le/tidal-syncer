@@ -1,9 +1,9 @@
-package internal_test
+package buildinfo_test
 
 import (
 	"testing"
 
-	"github.com/labi-le/tidal-syncer/internal"
+	"github.com/labi-le/tidal-syncer/internal/buildinfo"
 )
 
 // TestVersionVarsAddressable proves the three build-time vars exist as
@@ -11,10 +11,10 @@ import (
 func TestVersionVarsAddressable(t *testing.T) {
 	t.Helper()
 
-	// Given: the build-time variables declared in internal/version.go
+	// Given: the build-time variables declared in internal/buildinfo/buildinfo.go
 	// When:  we take their addresses
 	// Then:  the compiler accepts it (the vars are addressable strings)
-	_ = &internal.Version
-	_ = &internal.CommitHash
-	_ = &internal.BuildTime
+	_ = &buildinfo.Version
+	_ = &buildinfo.CommitHash
+	_ = &buildinfo.BuildTime
 }

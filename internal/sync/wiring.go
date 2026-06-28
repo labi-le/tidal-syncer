@@ -77,3 +77,36 @@ func NewDownloader(provider download.PlaybackProvider, httpClient *http.Client) 
 		download.WithFFmpeg(cmp.Or(os.Getenv(ffmpegEnv), defaultFFmpegPath)),
 	)
 }
+
+// PlaybackProvider adapts *tidal.Client to download.PlaybackProvider, mapping the
+// client's PlaybackInfo DTO into the download.Playback descriptor the downloader
+// consumes. It lives here beside NewDownloader and NewCoverFetcher, the wiring
+// layer that is permitted to reference the concrete wire client; the engine
+// itself depends only on ports.go.
+type PlaybackProvider struct {
+	client *tidal.Client
+}
+
+// NewPlaybackProvider builds the PlaybackProvider that resolves manifests through
+// client.
+func NewPlaybackProvider(client *tidal.Client) PlaybackProvider {
+	return PlaybackProvider{client: client}
+}
+
+// PlaybackInfo resolves the playback manifest for trackID at quality, returning
+// the download.Playback descriptor whose granted quality the downloader enforces
+// against its lossless floor.
+func (p PlaybackProvider) PlaybackInfo(
+	ctx context.Context, trackID string, quality tidal.Quality,
+) (download.Playback, error) {
+	info, err := p.client.PlaybackInfo(ctx, trackID, quality)
+	if err != nil {
+		return download.Playback{}, fmt.Errorf("sync: playback info for track %q: %w", trackID, err)
+	}
+
+	return download.Playback{
+		MimeType:       info.ManifestMimeType,
+		ManifestB64:    info.Manifest,
+		GrantedQuality: info.AudioQuality,
+	}, nil
+}

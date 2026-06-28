@@ -35,7 +35,7 @@ type TidalClient interface {
 // quality actually obtained. The concrete *download.Downloader satisfies it.
 type Downloader interface {
 	// Download writes trackID to destPath and returns the obtained quality tier.
-	Download(ctx context.Context, trackID, destPath string) (obtainedQuality string, err error)
+	Download(ctx context.Context, trackID, destPath string) (obtainedQuality tidal.Quality, err error)
 }
 
 // CoverFetcher retrieves album cover artwork as encoded JPEG bytes.

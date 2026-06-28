@@ -68,6 +68,37 @@ func TestSyncIdempotent(t *testing.T) {
 	}
 }
 
+// TestSyncSkipsSubRequestQualityOnSecondRun locks the no-churn guarantee: a track
+// whose best available master (LOSSLESS) is below the requested HI_RES_LOSSLESS
+// tier must be downloaded once and then skipped, not re-downloaded on every cycle
+// just because the obtained tier can never reach the requested one.
+func TestSyncSkipsSubRequestQualityOnSecondRun(t *testing.T) {
+	client := &fakeClient{
+		userID:    testUserID,
+		favTracks: []tidal.Track{makeTrack(trackA, albumOne, coverOne)},
+		albums:    map[string]tidal.Album{strconv.Itoa(albumOne): makeAlbum(albumOne, coverOne)},
+	}
+	dl := &fakeDownloader{src: fixtureFLAC, quality: "LOSSLESS", failIDs: map[string]bool{}}
+	covers := &fakeCovers{jpeg: minimalJPEG(t)}
+	cfg := baseConfig(t, config.Scope{Favorites: config.Favorites{Tracks: true}})
+	engine := newEngine(t, client, dl, covers, cfg)
+
+	if _, _, err := engine.SyncOnce(context.Background()); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+
+	second, _, err := engine.SyncOnce(context.Background())
+	if err != nil {
+		t.Fatalf("second run: %v", err)
+	}
+	if second.Downloaded != 0 || second.Skipped != 1 {
+		t.Fatalf("second run downloaded=%d skipped=%d, want downloaded=0 skipped=1", second.Downloaded, second.Skipped)
+	}
+	if got := dl.countFor(strconv.Itoa(trackA)); got != 1 {
+		t.Fatalf("download calls=%d, want 1 (sub-request track must not re-download)", got)
+	}
+}
+
 func TestSyncPartialFailure(t *testing.T) {
 	tracks := []tidal.Track{makeTrack(trackA, albumOne, coverOne), makeTrack(trackB, albumOne, coverOne), makeTrack(trackC, albumTwo, coverTwo)}
 	client := &fakeClient{userID: testUserID, favTracks: tracks, albums: twoAlbums()}

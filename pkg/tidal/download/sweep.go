@@ -36,7 +36,7 @@ func SweepStale(dir string) (int, error) {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), partSuffix) {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), PartSuffix) {
 			return nil
 		}
 

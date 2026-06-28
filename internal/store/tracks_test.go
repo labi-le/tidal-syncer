@@ -58,7 +58,8 @@ func Test_Store_GetTrack_round_trips(t *testing.T) {
 	st := newStore(t)
 	tr := store.Track{
 		TidalID: "t-9", ISRC: "US1234567890", AlbumID: "alb-1",
-		Path: "/music/x.flac", ObtainedQuality: "HI_RES", Status: store.StatusDone,
+		Path: "/music/x.flac", ObtainedQuality: "LOSSLESS", RequestedQuality: "HI_RES_LOSSLESS",
+		Status: store.StatusDone,
 	}
 
 	// When
