@@ -1,0 +1,27 @@
+# cmd/ — CLI COMPOSITION ROOT
+
+## OVERVIEW
+Flat `package main` — cobra CLI. Every subcommand is one file at `cmd/` root (no per-command subdirs). This is the composition root that wires every `internal/` + `pkg/tidal` package together.
+
+## WHERE TO LOOK
+| Task | File |
+|------|------|
+| root cmd assembly / flags / logger | main.go (`newRootCmd`, `PersistentPreRun`) |
+| add a subcommand | new cmd/<name>.go + register in `newRootCmd` |
+| OAuth login flow | login.go (`driveDeviceAuth`, `resolveCredentials`) |
+| one sync cycle wiring | sync.go (`runSync` → `executeSync`) |
+| daemon poll loop | daemon.go (`runDaemon`, `runDaemonCycle`) |
+| health + selfcheck + ffmpeg resolution | health.go |
+
+## KEY WIRING
+- **main.go**: `newRootCmd` builds the cobra tree. Logger built once in `PersistentPreRun` via `initLogger(verbose)` (bootstrap: Info, or Trace+Caller when `--verbose`), injected as a `*zerolog.Logger` pointer. `leveledLogger(base, cfg.Log.Level, verbose)` re-levels AFTER each subcommand loads its config; `parseLogLevel` maps the string. Flags: `--config`, `--verbose`. (The `--log-level` flag was removed.)
+- **login.go**: device-authorization grant. `resolveCredentials(cfg.TidalAuth)` is config-first with ldflag `defaultClientID`/`defaultClientSecret` fallback — reused by sync.
+- **sync.go**: `runSync` = `config.Load` → `store.Open`+`Migrate` → `lock.FileLock.TryAcquire` → `download.SweepStale` → `executeSync`. `--once` is the only mode (else `errOnceOnly`). `newSyncHTTPClient` tunes dial/TLS/response-header timeouts but sets NO overall client timeout, so streaming downloads aren't truncated. `playbackProvider` adapts `*tidal.Client` to `download.PlaybackProvider` (4-return).
+- **daemon.go**: poll loop; `runDaemonCycle` classifies per-cycle errors.
+- **health.go**: hosts BOTH `health` and `selfcheck`. `resolveFFmpegPath` = `TIDAL_FFMPEG` env else `/usr/local/bin/ffmpeg`; `checkFFmpeg` execs `ffmpeg -version`.
+
+## INVARIANTS (cmd-specific)
+- `version` MUST work WITHOUT a config file — it uses the bootstrap logger and never calls `config.Load`. Don't move config loading into `PersistentPreRun`.
+- Daemon NEVER self-reauths: on `auth.ErrReauthRequired` it logs "run 'tidal-syncer login'"; on `auth.ErrDeadCredentials` it logs an operator alert to fix client_id/secret. Re-auth is an out-of-band `tidal-syncer login` (writes the token via `internal/authstore`; the next tick picks it up).
+- Per-cycle daemon errors are logged, never fatal (the loop continues except on `context.Canceled`).
+- Stdlib `log` IS allowed here (cmd/main.go) but nowhere else (depguard).
