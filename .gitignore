@@ -54,3 +54,9 @@ context.md
 /config.yaml
 /Music/
 /data/
+
+# Operator secrets — .env holds real TIDAL credentials.
+# Never commit any .env*, but keep the tracked .env.example placeholder.
+.env
+.env.*
+!.env.example

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -37,6 +40,11 @@ func (c *cycleCounter) cycle(err error) func(context.Context) error {
 	}
 }
 
+// failingCycle builds a daemon cycle func that always yields err.
+func failingCycle(err error) func(context.Context) error {
+	return func(context.Context) error { return err }
+}
+
 // TestRunDaemon_LoopRunsMultipleCycles proves the daemon runs a cycle
 // immediately and then keeps polling on the ticker until the context cancels.
 func TestRunDaemon_LoopRunsMultipleCycles(t *testing.T) {
@@ -49,7 +57,9 @@ func TestRunDaemon_LoopRunsMultipleCycles(t *testing.T) {
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- runDaemon(ctx, &log, time.Millisecond, cc.cycle(nil), noopReauth) }()
+	go func() {
+		done <- runDaemon(ctx, &log, time.Millisecond, cc.cycle(nil))
+	}()
 
 	select {
 	case <-cc.reached:
@@ -74,13 +84,15 @@ func TestRunDaemon_GracefulExitOnCancel(t *testing.T) {
 	cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- runDaemon(ctx, &log, time.Hour, cc.cycle(nil), noopReauth) }()
+	go func() {
+		done <- runDaemon(ctx, &log, time.Hour, cc.cycle(nil))
+	}()
 
 	requireDaemonExit(t, done)
 }
 
 // TestRunDaemon_DeadCredentialsKeepsLooping proves a dead-credentials error is
-// logged but never fatal: the daemon keeps polling instead of returning.
+// logged but never fatal: the daemon keeps polling instead of exiting.
 func TestRunDaemon_DeadCredentialsKeepsLooping(t *testing.T) {
 	t.Parallel()
 
@@ -92,7 +104,7 @@ func TestRunDaemon_DeadCredentialsKeepsLooping(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDaemon(ctx, &log, time.Millisecond, cc.cycle(auth.ErrDeadCredentials), noopReauth)
+		done <- runDaemon(ctx, &log, time.Millisecond, cc.cycle(auth.ErrDeadCredentials))
 	}()
 
 	select {
@@ -106,45 +118,74 @@ func TestRunDaemon_DeadCredentialsKeepsLooping(t *testing.T) {
 	requireDaemonExit(t, done)
 }
 
-// noopReauth is a re-auth stub for daemon tests that need a fresh-link callback
-// but must not perform real network or store I/O.
-func noopReauth(context.Context) error { return nil }
+// TestRunDaemonCycle_ReauthRequired proves a revoked refresh token logs a single
+// actionable instruction to re-run the login command and returns nil, so the
+// daemon keeps polling rather than hanging or starting a device flow itself.
+func TestRunDaemonCycle_ReauthRequired(t *testing.T) {
+	t.Parallel()
 
-// TestRunDaemon_DeadCredentialsTriggersReauth proves the daemon invokes the
-// re-auth callback (which emits a fresh login link) when a cycle reports dead
-// credentials, and keeps polling afterwards.
-func TestRunDaemon_DeadCredentialsTriggersReauth(t *testing.T) {
+	var buf bytes.Buffer
+	lg := zerolog.New(&buf)
+
+	if err := runDaemonCycle(t.Context(), &lg, failingCycle(auth.ErrReauthRequired)); err != nil {
+		t.Fatalf("runDaemonCycle on reauth-required: got %v, want nil (keep polling)", err)
+	}
+
+	logs := buf.String()
+	if !strings.Contains(logs, "tidal-syncer login") {
+		t.Errorf("reauth message must tell the operator to run 'tidal-syncer login'; logs=%s", logs)
+	}
+	if strings.Contains(logs, "client_id") {
+		t.Errorf("reauth path must not raise the dead-credentials alert; logs=%s", logs)
+	}
+}
+
+// TestRunDaemonCycle_DeadCreds proves dead client credentials raise a distinct
+// operator alert naming the config keys.
+func TestRunDaemonCycle_DeadCreds(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	lg := zerolog.New(&buf)
+
+	if err := runDaemonCycle(t.Context(), &lg, failingCycle(auth.ErrDeadCredentials)); err != nil {
+		t.Fatalf("runDaemonCycle on dead credentials: got %v, want nil", err)
+	}
+
+	logs := buf.String()
+	if !strings.Contains(logs, "client_id") || !strings.Contains(logs, "config.yaml") {
+		t.Errorf("dead-credentials alert must name client_id and config.yaml; logs=%s", logs)
+	}
+}
+
+// TestRunDaemonCycle_Transient proves an unclassified (transient) cycle error is
+// neither fatal nor a re-auth instruction: the daemon just retries next tick.
+func TestRunDaemonCycle_Transient(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	lg := zerolog.New(&buf)
+
+	if err := runDaemonCycle(t.Context(), &lg, failingCycle(errors.New("network blip"))); err != nil {
+		t.Fatalf("runDaemonCycle on transient error: got %v, want nil", err)
+	}
+
+	logs := buf.String()
+	if strings.Contains(logs, "client_id") || strings.Contains(logs, "tidal-syncer login") {
+		t.Errorf("transient error must not raise a reauth/dead-credentials alert; logs=%s", logs)
+	}
+}
+
+// TestRunDaemonCycle_Canceled proves a cancelled cycle returns the shutdown
+// signal so the loop exits gracefully.
+func TestRunDaemonCycle_Canceled(t *testing.T) {
 	t.Parallel()
 
 	log := zerolog.Nop()
-	cc := &cycleCounter{reached: make(chan struct{})}
 
-	var reauthCalls atomic.Int64
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	done := make(chan error, 1)
-	go func() {
-		done <- runDaemon(ctx, &log, time.Millisecond, cc.cycle(auth.ErrDeadCredentials),
-			func(context.Context) error {
-				reauthCalls.Add(1)
-
-				return nil
-			})
-	}()
-
-	select {
-	case <-cc.reached:
-	case <-time.After(time.Second):
-		t.Fatal("daemon did not loop on dead-credentials error")
-	}
-
-	cancel()
-	requireDaemonExit(t, done)
-
-	if reauthCalls.Load() == 0 {
-		t.Fatal("reauth callback was never invoked on ErrDeadCredentials")
+	got := runDaemonCycle(context.Background(), &log, failingCycle(context.Canceled))
+	if !errors.Is(got, context.Canceled) {
+		t.Fatalf("runDaemonCycle on cancellation: got %v, want context.Canceled", got)
 	}
 }
 

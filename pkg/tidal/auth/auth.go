@@ -7,10 +7,14 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/labi-le/tidal-syncer/pkg/tidal"
 )
 
 const (
@@ -93,7 +97,7 @@ func New(clientID, clientSecret string, store TokenStore, opts ...Option) *Clien
 		clientID:         clientID,
 		clientSecret:     clientSecret,
 		store:            store,
-		httpClient:       &http.Client{Timeout: defaultHTTPTimeout},
+		httpClient:       newRetryingHTTPClient(),
 		baseURL:          DefaultBaseURL,
 		now:              time.Now,
 		slowDownIncrease: defaultSlowDownIncrease,
@@ -102,4 +106,36 @@ func New(clientID, clientSecret string, store TokenStore, opts ...Option) *Clien
 		opt(c)
 	}
 	return c
+}
+
+// newRetryingHTTPClient builds the default transport for the token endpoints: a
+// retrying client that mirrors the TIDAL API client's policy, reusing the
+// shared 429-aware [tidal.Backoff] and the same retry budget. It retries only
+// transient failures, as decided by [checkRetry], and preserves the historical
+// per-attempt 30s timeout. Callers may override it with [WithHTTPClient].
+func newRetryingHTTPClient() *http.Client {
+	rc := retryablehttp.NewClient()
+	rc.Logger = nil
+	rc.HTTPClient.Timeout = defaultHTTPTimeout
+	rc.RetryMax = tidal.DefaultRetryMax
+	rc.RetryWaitMin = tidal.DefaultRetryWaitMin
+	rc.RetryWaitMax = tidal.DefaultRetryWaitMax
+	rc.Backoff = tidal.Backoff
+	rc.CheckRetry = checkRetry
+	return rc.StandardClient()
+}
+
+// checkRetry retries only transient token-endpoint failures: HTTP 5xx, HTTP 429,
+// and network/transport errors. It never retries 4xx responses (400/401 carry
+// OAuth semantics classified by the caller, and the device-poll soft errors
+// authorization_pending/slow_down arrive as 400s), and it stops immediately on
+// context cancellation or an exceeded deadline, surfacing the context error.
+func checkRetry(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	if cerr := ctx.Err(); cerr != nil {
+		return false, fmt.Errorf("auth: retry aborted: %w", cerr)
+	}
+	transientStatus := resp != nil &&
+		(resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError)
+	//nolint:nilerr // CheckRetry signals "retry this request" as (true, nil); a transient transport error must stay unsurfaced here or no retry happens.
+	return err != nil || transientStatus, nil
 }

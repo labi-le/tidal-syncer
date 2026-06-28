@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -30,6 +31,11 @@ const (
 	maxOpenConns  = 1
 )
 
+// dbFileMode is the permission bits enforced on the SQLite database file.
+// 0o600 keeps it readable only by the owner because the DB holds the long-lived
+// TIDAL refresh token; mirrors internal/lock.lockFileMode.
+const dbFileMode os.FileMode = 0o600
+
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("store: not found")
 
@@ -39,7 +45,8 @@ var ErrBadMigrationName = errors.New("store: bad migration name")
 
 // Store is a single-writer SQLite cache backed by database/sql.
 type Store struct {
-	db *sql.DB
+	db     *sql.DB
+	dbPath string
 }
 
 // Open opens (creating it if needed) the cache database under dataDir and
@@ -59,7 +66,25 @@ func Open(dataDir string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(maxOpenConns)
 
-	return &Store{db: db}, nil
+	if err = tightenDBFilePerms(dbPath); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return &Store{db: db, dbPath: dbPath}, nil
+}
+
+// tightenDBFilePerms forces the SQLite file at dbPath to dbFileMode. Idempotent:
+// also tightens a pre-existing loose file. No-op if the file was not (yet)
+// materialized on disk by the driver.
+func tightenDBFilePerms(dbPath string) error {
+	if err := os.Chmod(dbPath, dbFileMode); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("chmod sqlite %q: %w", dbPath, err)
+	}
+	return nil
 }
 
 // Close releases the underlying database handle.
@@ -87,6 +112,10 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if err = s.applyMigration(ctx, entry.Name()); err != nil {
 			return err
 		}
+	}
+
+	if err = tightenDBFilePerms(s.dbPath); err != nil {
+		return err
 	}
 
 	return nil

@@ -33,8 +33,10 @@ const (
 	// partSuffix names the temporary file that receives stream bytes before the
 	// atomic rename into the final destination path.
 	partSuffix = ".part"
-	// tempFileMode is the permission mode of the temporary ".part" file.
-	tempFileMode = 0o600
+	// tempFileMode is the permission mode of the temporary ".part" file, which is
+	// renamed into the final FLAC. 0o644 keeps the music library world-readable for
+	// the host user and media servers regardless of the container UID.
+	tempFileMode = 0o644
 )
 
 // PlaybackProvider resolves the playback manifest for a track at a requested

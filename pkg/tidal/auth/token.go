@@ -18,7 +18,11 @@ const (
 	oauthErrSlowDown             = "slow_down"
 	oauthErrExpiredToken         = "expired_token"
 	oauthErrInvalidClient        = "invalid_client"
+	oauthErrInvalidGrant         = "invalid_grant"
 )
+
+// transientErrorBodyLimit bounds how many bytes of an untrusted token-endpoint body are echoed into a transient error.
+const transientErrorBodyLimit = 256
 
 // tokenResponse is the subset of the TIDAL token endpoint payload this package
 // consumes. Fields absent from a given response decode to their zero value.
@@ -55,44 +59,50 @@ func (c *Client) postToken(ctx context.Context, form url.Values) (tokenResponse,
 	return decodeTokenResponse(resp)
 }
 
-// decodeTokenResponse maps an HTTP token response to a [tokenResponse] or a
-// typed error based on its status code.
+// decodeTokenResponse maps a 200 response to a [tokenResponse]; any non-200
+// status is classified into a typed error from the OAuth error field in the
+// response body by [classifyTokenError].
 func decodeTokenResponse(resp *http.Response) (tokenResponse, error) {
-	switch resp.StatusCode {
-	case http.StatusOK:
+	if resp.StatusCode == http.StatusOK {
 		var tr tokenResponse
 		if err := json.NewDecoder(io.LimitReader(resp.Body, responseBodyLimit)).Decode(&tr); err != nil {
 			return tokenResponse{}, fmt.Errorf("auth: decode token response: %w", err)
 		}
 		return tr, nil
-	case http.StatusUnauthorized:
-		return tokenResponse{}, fmt.Errorf("auth: token endpoint status 401: %w", ErrDeadCredentials)
-	case http.StatusBadRequest:
-		return tokenResponse{}, classifyBadRequest(resp)
-	default:
-		return tokenResponse{}, fmt.Errorf("auth: token endpoint status %d: %w", resp.StatusCode, errUnexpectedStatus)
 	}
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, responseBodyLimit))
+	return tokenResponse{}, classifyTokenError(resp.StatusCode, body)
 }
 
-// classifyBadRequest decodes the OAuth error field from a 400 response and maps
-// it to the matching internal or exported sentinel.
-func classifyBadRequest(resp *http.Response) error {
-	var body struct {
+// classifyTokenError maps a non-200 token-endpoint response to a typed error
+// from the OAuth 2.0 error field in its body (RFC 6749 §5.2), independent of the
+// HTTP status code. A response without a recognizable OAuth error body (a
+// bodiless 401 from a WAF or CDN, a 5xx, or a proxy hiccup) is treated as a
+// transient, retryable failure rather than a fatal credential error.
+func classifyTokenError(status int, body []byte) error {
+	var oauthErr struct {
 		Error string `json:"error"`
 	}
-	_ = json.NewDecoder(io.LimitReader(resp.Body, responseBodyLimit)).Decode(&body)
+	_ = json.Unmarshal(body, &oauthErr)
 
-	switch body.Error {
+	switch oauthErr.Error {
 	case oauthErrAuthorizationPending:
 		return errAuthorizationPending
 	case oauthErrSlowDown:
 		return errSlowDown
 	case oauthErrExpiredToken:
 		return ErrDeviceCodeExpired
+	case oauthErrInvalidGrant:
+		return ErrReauthRequired
 	case oauthErrInvalidClient:
 		return ErrDeadCredentials
 	default:
-		return fmt.Errorf("auth: token endpoint error %q: %w", body.Error, errUnexpectedStatus)
+		snippet := body
+		if len(snippet) > transientErrorBodyLimit {
+			snippet = snippet[:transientErrorBodyLimit]
+		}
+		return fmt.Errorf("auth: token endpoint status %d body %q: %w", status, snippet, errTransient)
 	}
 }
 

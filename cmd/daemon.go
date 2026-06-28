@@ -11,16 +11,13 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
-	"github.com/labi-le/tidal-syncer/internal/authstore"
 	"github.com/labi-le/tidal-syncer/internal/config"
-	"github.com/labi-le/tidal-syncer/internal/store"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/auth"
 )
 
 // newDaemonCmd builds the `daemon` subcommand that runs the full sync pipeline
 // on a poll loop until it receives SIGTERM/SIGINT, then shuts down gracefully.
-// The poll interval is read once from the daemon configuration; each cycle then
-// reuses runSync, which loads config and acquires the data-directory lock itself.
+// Each sync cycle opens its own short-lived store.
 func newDaemonCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.Command {
 	return &cobra.Command{
 		Use:   "daemon",
@@ -39,11 +36,8 @@ func newDaemonCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.
 			cycle := func(ctx context.Context) error {
 				return runSync(ctx, *configPath, *verbose, logger)
 			}
-			reauth := func(ctx context.Context) error {
-				return emitDeviceLink(ctx, *configPath, logger)
-			}
 
-			return runDaemon(cmd.Context(), &logger, cfg.Daemon.Interval, cycle, reauth)
+			return runDaemon(cmd.Context(), &logger, cfg.Daemon.Interval, cycle)
 		},
 	}
 }
@@ -58,7 +52,6 @@ func runDaemon(
 	lg *zerolog.Logger,
 	interval time.Duration,
 	cycle func(context.Context) error,
-	reauth func(context.Context) error,
 ) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
@@ -69,7 +62,9 @@ func runDaemon(
 	lg.Info().Dur("interval", interval).Msg("daemon started")
 
 	for ctx.Err() == nil {
-		runDaemonCycle(ctx, lg, cycle, reauth)
+		if err := runDaemonCycle(ctx, lg, cycle); err != nil {
+			break
+		}
 
 		select {
 		case <-ctx.Done():
@@ -82,67 +77,36 @@ func runDaemon(
 	return nil
 }
 
-// runDaemonCycle runs one pipeline cycle and classifies any error so the loop
-// keeps polling. Cancellation is the expected shutdown path; dead credentials
-// get a prominent re-login instruction (mirroring the login command); a
-// contended lock is a benign skip; anything else is a recoverable failure.
+// runDaemonCycle runs one pipeline cycle and classifies any error by recovery
+// class. A contended lock is a benign skip; a revoked refresh token logs a
+// single actionable instruction to re-run `tidal-syncer login` (the daemon
+// never re-authenticates by itself); dead client credentials get a distinct
+// operator alert; anything else is transient and retried next tick. Only
+// cancellation returns a non-nil error, so the loop can exit on shutdown.
 func runDaemonCycle(
 	ctx context.Context,
 	lg *zerolog.Logger,
 	cycle func(context.Context) error,
-	reauth func(context.Context) error,
-) {
+) error {
 	err := cycle(ctx)
 	if err == nil {
-		return
+		return nil
 	}
 
 	switch {
 	case errors.Is(err, context.Canceled):
 		lg.Debug().Msg("sync cycle cancelled by shutdown")
-	case errors.Is(err, auth.ErrDeadCredentials):
-		if reErr := reauth(ctx); reErr != nil {
-			lg.Error().Err(reErr).
-				Msg("dead credentials and could not start a fresh device login; will retry on next tick")
-		}
+
+		return err
 	case errors.Is(err, errAnotherSyncRunning):
-		lg.Warn().Msg("another sync is already running; skipping this cycle")
+		lg.Debug().Msg("another sync is already running; skipping this cycle")
+	case errors.Is(err, auth.ErrReauthRequired):
+		lg.Error().Msg("re-authentication required: run 'tidal-syncer login' to re-authorize")
+	case errors.Is(err, auth.ErrDeadCredentials):
+		lg.Error().Msg("dead TIDAL client credentials: set tidal_auth.client_id and tidal_auth.client_secret in config.yaml; not attempting re-auth")
 	default:
 		lg.Error().Err(err).Msg("sync cycle failed; will retry on next tick")
 	}
-}
-
-// emitDeviceLink starts a fresh TIDAL device-authorization grant and logs the
-// verification link the operator must open to re-authenticate. The daemon calls
-// it when a cycle fails with auth.ErrDeadCredentials so a long-running daemon
-// surfaces a working login link every cycle instead of silently failing. The
-// returned error (config, store or device-auth failure) is logged by the caller;
-// the daemon keeps polling regardless.
-func emitDeviceLink(ctx context.Context, configPath string, lg zerolog.Logger) error {
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return fmt.Errorf("daemon: reauth: %w", err)
-	}
-
-	st, err := store.Open(cfg.Paths.Data)
-	if err != nil {
-		return fmt.Errorf("daemon: reauth: open store: %w", err)
-	}
-	defer func() { _ = st.Close() }()
-
-	if err = st.Migrate(ctx); err != nil {
-		return fmt.Errorf("daemon: reauth: migrate store: %w", err)
-	}
-
-	clientID, clientSecret := resolveCredentials(cfg.TidalAuth)
-	device, err := auth.New(clientID, clientSecret, authstore.New(st)).StartDeviceAuth(ctx)
-	if err != nil {
-		return fmt.Errorf("daemon: reauth: start device authorization: %w", err)
-	}
-
-	lg.Log().
-		Str("url", device.VerificationURIComplete).
-		Msg("TIDAL credentials expired — open this link to re-authenticate; the daemon keeps polling")
 
 	return nil
 }

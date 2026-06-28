@@ -63,18 +63,14 @@ func runLogin(ctx context.Context, configPath string, verbose bool, lg zerolog.L
 	clientID, clientSecret := resolveCredentials(cfg.TidalAuth)
 	client := auth.New(clientID, clientSecret, authstore.New(st), opts...)
 
-	device, err := client.StartDeviceAuth(ctx)
+	err = driveDeviceAuth(ctx, client, func(device auth.DeviceAuth) {
+		// Emit the verification link at no level so it surfaces regardless of the
+		// configured log level: this is the one line the user must act on.
+		lg.Log().
+			Str("url", device.VerificationURIComplete).
+			Msg("open this link in your browser and approve the login")
+	})
 	if err != nil {
-		return fmt.Errorf("login: start device authorization: %w", err)
-	}
-
-	// Emit the verification link at no level so it surfaces regardless of the
-	// configured log level: this is the one line the user must act on.
-	lg.Log().
-		Str("url", device.VerificationURIComplete).
-		Msg("open this link in your browser and approve the login")
-
-	if err = client.PollToken(ctx, device.DeviceCode, device.Interval, device.Expiry); err != nil {
 		if errors.Is(err, auth.ErrDeadCredentials) {
 			lg.Error().
 				Msg("TIDAL rejected the bundled client credentials; set tidal_auth.client_id and tidal_auth.client_secret in your config")
@@ -84,6 +80,28 @@ func runLogin(ctx context.Context, configPath string, verbose bool, lg zerolog.L
 	}
 
 	lg.Info().Msg("login successful: token stored")
+
+	return nil
+}
+
+// driveDeviceAuth runs one TIDAL device-authorization grant to completion. It
+// starts the grant, hands the resulting [auth.DeviceAuth] to onLink so the
+// caller can publish the verification link, then polls the token endpoint until
+// the user approves the login, the device code expires, or ctx is done.
+// [auth.Client.PollToken] persists the refreshed token through the client's
+// store on success. The login command owns this helper so the start-link-poll
+// sequence lives in exactly one place.
+func driveDeviceAuth(ctx context.Context, authClient *auth.Client, onLink func(auth.DeviceAuth)) error {
+	device, err := authClient.StartDeviceAuth(ctx)
+	if err != nil {
+		return fmt.Errorf("start device authorization: %w", err)
+	}
+
+	onLink(device)
+
+	if err = authClient.PollToken(ctx, device.DeviceCode, device.Interval, device.Expiry); err != nil {
+		return fmt.Errorf("poll device token: %w", err)
+	}
 
 	return nil
 }

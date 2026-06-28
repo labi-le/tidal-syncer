@@ -26,9 +26,11 @@ const (
 	// m3uHeader is the mandatory first line of an extended M3U playlist.
 	m3uHeader = "#EXTM3U\n"
 	// playlistDirMode is the permission mode for the created Playlists directory.
-	playlistDirMode os.FileMode = 0o750
-	// playlistFileMode is the permission mode for a written .m3u8 file.
-	playlistFileMode os.FileMode = 0o600
+	// 0o755 keeps it world-traversable like the rest of the music library.
+	playlistDirMode os.FileMode = 0o755
+	// playlistFileMode is the permission mode for a written .m3u8 file. 0o644 keeps
+	// playlists world-readable for the host user and media servers.
+	playlistFileMode os.FileMode = 0o644
 	// opWritePlaylists scopes the logger for one playlist-export run.
 	opWritePlaylists = "sync.WritePlaylists"
 	// componentPlaylist labels every log line emitted by the writer.

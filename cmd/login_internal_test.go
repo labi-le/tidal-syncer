@@ -21,6 +21,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/labi-le/tidal-syncer/internal/authstore"
 	"github.com/labi-le/tidal-syncer/internal/config"
 	"github.com/labi-le/tidal-syncer/internal/store"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/auth"
@@ -38,6 +39,7 @@ const (
 	tokenSuccessBody    = `{"access_token":"ACCESS-1","refresh_token":"REFRESH-1","expires_in":604800,` +
 		`"user_id":42,"sessionId":"SESS-1","user":{"countryCode":"DE"}}`
 	invalidClientBody = `{"error":"invalid_client"}`
+	expiredTokenBody  = `{"error":"expired_token"}`
 )
 
 const configFileMode os.FileMode = 0o600
@@ -194,5 +196,88 @@ func TestResolveCredentials(t *testing.T) {
 				t.Errorf("got (%q, %q), want (%q, %q)", id, secret, tc.wantID, tc.wantSec)
 			}
 		})
+	}
+}
+
+// newDriveTestClient opens and migrates a store under dataDir, then builds an
+// auth client pointed at a mock OAuth server whose token endpoint replies with
+// tokenStatus/tokenBody. It returns the client and the open store so callers can
+// assert on the persisted token through the same handle.
+func newDriveTestClient(t *testing.T, dataDir string, tokenStatus int, tokenBody string) (*auth.Client, *store.Store) {
+	t.Helper()
+
+	st, err := store.Open(dataDir)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	if err = st.Migrate(t.Context()); err != nil {
+		t.Fatalf("migrate store: %v", err)
+	}
+
+	baseURL := startMockOAuth(t, tokenStatus, tokenBody)
+	client := auth.New("test-id", "test-secret", authstore.New(st),
+		auth.WithBaseURL(baseURL),
+		auth.WithClock(loginFixedClock),
+	)
+
+	return client, st
+}
+
+// assertTokenPersisted reads the token through st and asserts it matches the
+// mock login response.
+func assertTokenPersisted(t *testing.T, st *store.Store) {
+	t.Helper()
+
+	got, err := st.GetToken(t.Context())
+	if err != nil {
+		t.Fatalf("get token: %v", err)
+	}
+
+	want := store.Token{
+		AccessToken: "ACCESS-1", RefreshToken: "REFRESH-1",
+		ExpiresAt: wantExpiresAt, UserID: "42", CountryCode: "DE", SessionID: "SESS-1",
+	}
+	if got != want {
+		t.Errorf("stored token: got %+v, want %+v", got, want)
+	}
+}
+
+// TestDriveDeviceAuth_Success proves the shared helper starts the grant, hands
+// the verification link to onLink, and drives PollToken to completion so the
+// token is persisted through the store. driveDeviceAuth is the device-flow
+// sequence the login command depends on.
+func TestDriveDeviceAuth_Success(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	client, st := newDriveTestClient(t, dataDir, http.StatusOK, tokenSuccessBody)
+
+	var gotURL string
+	err := driveDeviceAuth(t.Context(), client, func(da auth.DeviceAuth) {
+		gotURL = da.VerificationURIComplete
+	})
+	if err != nil {
+		t.Fatalf("driveDeviceAuth: %v", err)
+	}
+
+	if gotURL != wantVerificationURL {
+		t.Errorf("onLink URL: got %q, want %q", gotURL, wantVerificationURL)
+	}
+	assertTokenPersisted(t, st)
+}
+
+// TestDriveDeviceAuth_Expiry proves an expired device code surfaces from the
+// shared helper as auth.ErrDeviceCodeExpired.
+func TestDriveDeviceAuth_Expiry(t *testing.T) {
+	t.Parallel()
+
+	dataDir := t.TempDir()
+	client, _ := newDriveTestClient(t, dataDir, http.StatusBadRequest, expiredTokenBody)
+
+	err := driveDeviceAuth(t.Context(), client, func(auth.DeviceAuth) {})
+	if !errors.Is(err, auth.ErrDeviceCodeExpired) {
+		t.Fatalf("driveDeviceAuth error: got %v, want ErrDeviceCodeExpired", err)
 	}
 }

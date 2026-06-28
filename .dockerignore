@@ -35,3 +35,9 @@ docker-compose.yml
 docs/
 *.md
 config.example.yaml
+
+# Operator secrets — never bake .env into the image.
+# Keep .env.example so the build / docs can reference placeholder keys.
+.env
+.env.*
+!.env.example

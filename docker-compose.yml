@@ -1,4 +1,4 @@
-# tidal-syncer — Docker Compose deployment.
+# tidal-syncer — Docker Compose deployment (sync daemon).
 #
 # Builds the multi-stage Dockerfile at the repo root (distroless static, nonroot
 # UID 65532, bundled static ffmpeg) and wires the three runtime mounts the
@@ -9,8 +9,15 @@
 #   /app/data        — SQLite cache + flock    (rw, host dir → container dir)
 #
 # Host dirs MUST be writable by UID 65532 (`sudo chown -R 65532:65532 ./Music ./data`).
+# The output FLAC library is written world-readable (dirs 0755, files 0644) so the
+# host user and media servers can read ./Music regardless of this UID; the token DB
+# under ./data stays private (0600).
 # Override per-deployment by editing the bind-mount source paths below or by
 # layering a docker-compose.override.yml.
+#
+# When the stored TIDAL refresh token is revoked, the daemon logs an actionable
+# message and keeps polling; re-authenticate interactively to recover:
+#   docker compose run --rm tidal-syncer login
 #
 # No top-level `version:` key — Compose v2 deprecated it; `docker compose config`
 # warns when present.
@@ -19,23 +26,30 @@ services:
   tidal-syncer:
     build: .
     image: tidal-syncer:local
+    # amd64-only image (Dockerfile pins GOARCH=amd64 + an amd64 static ffmpeg);
+    # pin the platform so an arm64 host emulates rather than producing an image
+    # whose bundled ffmpeg would die with "exec format error".
+    platform: linux/amd64
     # Default command: long-running poll daemon (configurable in config.yaml).
     # Override for one-off use: `docker compose run --rm tidal-syncer sync`.
     command: ["daemon"]
     user: "65532:65532"
     restart: unless-stopped
-    # Headroom over the in-process <5s graceful-shutdown budget; container is
+    # Headroom over the in-process <5s graceful-shutdown budget; the container is
     # SIGKILLed only if the binary does not exit cleanly within 30s of SIGTERM.
     stop_grace_period: 30s
     environment:
-      # Already set as ENV in the Dockerfile; restated here so operators can
-      # see (and override) the bundled-ffmpeg path without reading the image.
+      # Already set as ENV in the Dockerfile; restated here so operators can see
+      # (and override) the bundled-ffmpeg path without reading the image.
       TIDAL_FFMPEG: /usr/local/bin/ffmpeg
       # Example overrides (uncomment as needed):
       # TZ: Europe/Berlin
     volumes:
       - ./Music:/app/Music
       # IMPORTANT: create config.yaml from config.example.yaml BEFORE first run,
-      # or Docker auto-creates an empty directory here and the binary fails to start.
+      # or Docker auto-creates an empty directory here and the binary fails to
+      # start. config.yaml MUST be a FILE bind — a named volume would shadow it
+      # with an empty dir, and the loader rejects a directory.
       - ./config.yaml:/app/config.yaml:ro
+      # The token DB and cross-process lock live here.
       - ./data:/app/data

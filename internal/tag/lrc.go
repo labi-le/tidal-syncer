@@ -9,8 +9,9 @@ import (
 const (
 	// lrcExtension is the file extension of a synced-lyric sidecar.
 	lrcExtension = ".lrc"
-	// lrcFileMode is the permission mode of a written .lrc sidecar.
-	lrcFileMode = 0o600
+	// lrcFileMode is the permission mode of a written .lrc sidecar. 0o644 matches
+	// the world-readable music library so the sidecar is readable alongside its FLAC.
+	lrcFileMode = 0o644
 )
 
 // WriteLRC writes lrc as a synced-lyric sidecar next to audioPath, reusing the

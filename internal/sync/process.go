@@ -19,7 +19,9 @@ import (
 
 const (
 	// dirMode is the permission mode applied to created destination directories.
-	dirMode os.FileMode = 0o750
+	// 0o755 keeps the music library world-traversable so the host user and media
+	// servers (Jellyfin, Navidrome, ...) can read it regardless of the container UID.
+	dirMode os.FileMode = 0o755
 	// opProcessTrack scopes the logger for the per-track pipeline.
 	opProcessTrack = "sync.processTrack"
 )
