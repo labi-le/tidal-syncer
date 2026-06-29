@@ -50,8 +50,20 @@ removal:
 
 # Daemon mode settings.
 daemon:
-  # Interval between automatic sync runs. Minimum 1m. Examples: 30s, 15m, 1h.
-  interval: 15m
+  mode: polling
+  polling:
+    min: 15m
+    max: 15m
+  time_window:
+    start: "03:00"
+    end: "05:00"
+    min: 15m
+    max: 30m
+
+jitter:
+  worker:
+    min: 0s
+    max: 0s
 
 # Number of concurrent download workers. Range: 1-8.
 concurrency: 3

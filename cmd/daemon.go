@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
@@ -37,7 +36,7 @@ func newDaemonCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.
 				return runSync(ctx, *configPath, *verbose, logger)
 			}
 
-			return runDaemon(cmd.Context(), &logger, cfg.Daemon.Interval, cycle)
+			return runDaemon(cmd.Context(), &logger, cfg.Daemon, cycle)
 		},
 	}
 }
@@ -50,26 +49,23 @@ func newDaemonCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.
 func runDaemon(
 	ctx context.Context,
 	lg *zerolog.Logger,
-	interval time.Duration,
+	daemon config.Daemon,
 	cycle func(context.Context) error,
 ) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	lg.Info().Str("mode", daemon.Mode).Msg("daemon started")
 
-	lg.Info().Dur("interval", interval).Msg("daemon started")
-
-	for ctx.Err() == nil {
-		if err := runDaemonCycle(ctx, lg, cycle); err != nil {
-			break
-		}
-
-		select {
-		case <-ctx.Done():
-		case <-ticker.C:
-		}
+	var err error
+	if daemon.Mode == config.DaemonModePolling {
+		err = runPollingDaemon(ctx, lg, daemon.Polling, cycle)
+	}
+	if daemon.Mode == config.DaemonModeTimeWindow {
+		err = runTimeWindowDaemon(ctx, lg, daemon.TimeWindow, cycle)
+	}
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return err
 	}
 
 	lg.Info().Msg("shutdown signal received; daemon stopping")

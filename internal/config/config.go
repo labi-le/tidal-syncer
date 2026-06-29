@@ -21,6 +21,7 @@ type Config struct {
 	Lyrics       Lyrics    `yaml:"lyrics"`
 	Removal      Removal   `yaml:"removal"`
 	Daemon       Daemon    `yaml:"daemon"`
+	Jitter       Jitter    `yaml:"jitter"`
 	Concurrency  int       `yaml:"concurrency"`
 	TidalAuth    TidalAuth `yaml:"tidal_auth"`
 	Log          Log       `yaml:"log"`
@@ -65,7 +66,26 @@ type Removal struct {
 
 // Daemon holds settings for scheduled background syncing.
 type Daemon struct {
-	Interval time.Duration `yaml:"interval"`
+	Mode       string           `yaml:"mode"`
+	Interval   time.Duration    `yaml:"interval"`
+	Polling    DurationRange    `yaml:"polling"`
+	TimeWindow DaemonTimeWindow `yaml:"time_window"`
+}
+
+type DaemonTimeWindow struct {
+	Start string        `yaml:"start"`
+	End   string        `yaml:"end"`
+	Min   time.Duration `yaml:"min"`
+	Max   time.Duration `yaml:"max"`
+}
+
+type Jitter struct {
+	Worker DurationRange `yaml:"worker"`
+}
+
+type DurationRange struct {
+	Min time.Duration `yaml:"min"`
+	Max time.Duration `yaml:"max"`
 }
 
 // TidalAuth carries the TIDAL OAuth client credentials.
@@ -81,6 +101,9 @@ type Log struct {
 }
 
 const (
+	DaemonModePolling    = "polling"
+	DaemonModeTimeWindow = "time_window"
+
 	defaultMusicPath    = "/app/Music"
 	defaultConfigPath   = "/app/config.yaml"
 	defaultDataPath     = "/app/data"
@@ -121,8 +144,12 @@ func Defaults() Config {
 			Embed:   true,
 			Sidecar: true,
 		},
-		Removal:     Removal{Policy: defaultRemovalPolicy},
-		Daemon:      Daemon{Interval: defaultInterval},
+		Removal: Removal{Policy: defaultRemovalPolicy},
+		Daemon: Daemon{
+			Mode:     DaemonModePolling,
+			Interval: defaultInterval,
+		},
+		Jitter:      Jitter{},
 		Concurrency: defaultConcurrency,
 		TidalAuth:   TidalAuth{ClientID: "", ClientSecret: ""},
 		Log: Log{
@@ -153,10 +180,20 @@ func Load(path string) (Config, error) {
 	if err = yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config %q: %w", path, err)
 	}
+	cfg.applyDerivedDefaults()
 
 	if err = cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("validate config %q: %w", path, err)
 	}
 
 	return cfg, nil
+}
+
+func (c *Config) applyDerivedDefaults() {
+	if c.Daemon.Mode == "" {
+		c.Daemon.Mode = DaemonModePolling
+	}
+	if c.Daemon.Polling == (DurationRange{}) {
+		c.Daemon.Polling = DurationRange{Min: c.Daemon.Interval, Max: c.Daemon.Interval}
+	}
 }

@@ -52,8 +52,14 @@ func TestLoadExampleMatchesExpected(t *testing.T) {
 			Embed:   true,
 			Sidecar: true,
 		},
-		Removal:     config.Removal{Policy: "keep"},
-		Daemon:      config.Daemon{Interval: exampleInterval},
+		Removal: config.Removal{Policy: "keep"},
+		Daemon: config.Daemon{
+			Mode:       config.DaemonModePolling,
+			Interval:   exampleInterval,
+			Polling:    config.DurationRange{Min: exampleInterval, Max: exampleInterval},
+			TimeWindow: config.DaemonTimeWindow{Start: "03:00", End: "05:00", Min: exampleInterval, Max: 30 * time.Minute},
+		},
+		Jitter:      config.Jitter{Worker: config.DurationRange{Min: 0, Max: 0}},
 		Concurrency: exampleConcurrency,
 		TidalAuth: config.TidalAuth{
 			ClientID:     "your-tidal-client-id",
@@ -124,8 +130,8 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 		},
 		{
 			name:       "daemon interval below minimum",
-			mutate:     func(c *config.Config) { c.Daemon.Interval = subMinInterval },
-			wantSubstr: []string{"daemon.interval"},
+			mutate:     func(c *config.Config) { c.Daemon.Polling = config.DurationRange{Min: subMinInterval, Max: time.Minute} },
+			wantSubstr: []string{"daemon.polling"},
 		},
 		{
 			name:       "quality floor lossy low",

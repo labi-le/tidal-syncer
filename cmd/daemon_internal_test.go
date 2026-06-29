@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/labi-le/tidal-syncer/internal/config"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/auth"
 )
 
@@ -58,7 +59,7 @@ func TestRunDaemon_LoopRunsMultipleCycles(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDaemon(ctx, &log, time.Millisecond, cc.cycle(nil))
+		done <- runDaemon(ctx, &log, pollingDaemonConfig(time.Millisecond), cc.cycle(nil))
 	}()
 
 	select {
@@ -85,7 +86,7 @@ func TestRunDaemon_GracefulExitOnCancel(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDaemon(ctx, &log, time.Hour, cc.cycle(nil))
+		done <- runDaemon(ctx, &log, pollingDaemonConfig(time.Hour), cc.cycle(nil))
 	}()
 
 	requireDaemonExit(t, done)
@@ -104,7 +105,7 @@ func TestRunDaemon_DeadCredentialsKeepsLooping(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDaemon(ctx, &log, time.Millisecond, cc.cycle(auth.ErrDeadCredentials))
+		done <- runDaemon(ctx, &log, pollingDaemonConfig(time.Millisecond), cc.cycle(auth.ErrDeadCredentials))
 	}()
 
 	select {
@@ -116,6 +117,13 @@ func TestRunDaemon_DeadCredentialsKeepsLooping(t *testing.T) {
 	cancel()
 
 	requireDaemonExit(t, done)
+}
+
+func pollingDaemonConfig(delay time.Duration) config.Daemon {
+	return config.Daemon{
+		Mode:    config.DaemonModePolling,
+		Polling: config.DurationRange{Min: delay, Max: delay},
+	}
 }
 
 // TestRunDaemonCycle_ReauthRequired proves a revoked refresh token logs a single

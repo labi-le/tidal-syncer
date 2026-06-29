@@ -118,6 +118,9 @@ func (e *Engine) downloadAll(ctx context.Context, tracks []tidal.Track, c *count
 			if err := e.limiter.Wait(groupCtx); err != nil {
 				return fmt.Errorf("sync: rate limit: %w", err)
 			}
+			if err := waitForDelay(groupCtx, workerDelayFn(e.config.Jitter.Worker)); err != nil {
+				return fmt.Errorf("sync: worker jitter: %w", err)
+			}
 			e.processTrack(groupCtx, track, c)
 
 			return nil

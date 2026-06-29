@@ -25,10 +25,24 @@ func (c Config) Validate() error {
 		[]string{removalKeep, removalMirror, removalTrash}); err != nil {
 		return err
 	}
+	if err := requireOneOf("daemon.mode", c.Daemon.Mode,
+		[]string{DaemonModePolling, DaemonModeTimeWindow}); err != nil {
+		return err
+	}
 	if err := validateConcurrency(c.Concurrency); err != nil {
 		return err
 	}
-	if err := validateInterval(c.Daemon.Interval); err != nil {
+	if c.Daemon.Mode == DaemonModePolling {
+		if err := validateDurationRange("daemon.polling", c.daemonPollingRange(), minInterval); err != nil {
+			return err
+		}
+	}
+	if c.Daemon.Mode == DaemonModeTimeWindow {
+		if err := validateTimeWindow(c.Daemon.TimeWindow); err != nil {
+			return err
+		}
+	}
+	if err := validateDurationRange("jitter.worker", c.Jitter.Worker, 0); err != nil {
 		return err
 	}
 	if err := requireOneOf("quality.floor", string(c.Quality.Floor),
@@ -69,11 +83,57 @@ func validateConcurrency(n int) error {
 	return nil
 }
 
-func validateInterval(d time.Duration) error {
-	if d < minInterval {
-		return fmt.Errorf("daemon.interval %s is too small: must be at least %s", d, minInterval)
+func validateDurationRange(field string, rng DurationRange, floor time.Duration) error {
+	if rng.Min < 0 {
+		return fmt.Errorf("%s.min %s is invalid: must be non-negative", field, rng.Min)
 	}
+	if rng.Max < 0 {
+		return fmt.Errorf("%s.max %s is invalid: must be non-negative", field, rng.Max)
+	}
+	if rng.Min > rng.Max {
+		return fmt.Errorf("%s min %s is greater than max %s", field, rng.Min, rng.Max)
+	}
+	if rng.Min < floor {
+		return fmt.Errorf("%s min %s is too small: must be at least %s", field, rng.Min, floor)
+	}
+	if rng.Max < floor {
+		return fmt.Errorf("%s max %s is too small: must be at least %s", field, rng.Max, floor)
+	}
+
 	return nil
+}
+
+func validateTimeWindow(window DaemonTimeWindow) error {
+	if err := validateClock("daemon.time_window.start", window.Start); err != nil {
+		return err
+	}
+	if err := validateClock("daemon.time_window.end", window.End); err != nil {
+		return err
+	}
+	if window.Start == window.End {
+		return fmt.Errorf("daemon.time_window start %q must differ from end %q", window.Start, window.End)
+	}
+
+	return validateDurationRange("daemon.time_window", window.DelayRange(), minInterval)
+}
+
+func validateClock(field, value string) error {
+	if len(value) != 5 || value[2] != ':' {
+		return fmt.Errorf("%s %q is invalid: must match HH:MM", field, value)
+	}
+	if _, err := time.Parse("15:04", value); err != nil {
+		return fmt.Errorf("%s %q is invalid: must match HH:MM", field, value)
+	}
+
+	return nil
+}
+
+func (c Config) daemonPollingRange() DurationRange {
+	if c.Daemon.Polling != (DurationRange{}) {
+		return c.Daemon.Polling
+	}
+
+	return DurationRange{Min: c.Daemon.Interval, Max: c.Daemon.Interval}
 }
 
 func validatePathTemplate(tmpl string) error {
