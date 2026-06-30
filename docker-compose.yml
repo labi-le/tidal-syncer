@@ -8,16 +8,20 @@
 #   /app/config.yaml — config FILE             (ro, host file → container file)
 #   /app/data        — SQLite cache + flock    (rw, host dir → container dir)
 #
-# Host dirs MUST be writable by UID 65532 (`sudo chown -R 65532:65532 ./Music ./data`).
+# The daemon runs as ${PUID:-65532}:${PGID:-65532}. The Makefile auto-sets PUID/PGID
+# to your host UID:GID (id -u / id -g) for every `make` compose target, so ./data and
+# ./Music are owned by you; a bare `docker compose up` falls back to 65532.
+# Host bind dirs MUST be owned by that UID:GID, e.g.:
+#   sudo chown -R "$(id -u):$(id -g)" ./Music ./data
 # The output FLAC library is written world-readable (dirs 0755, files 0644) so the
 # host user and media servers can read ./Music regardless of this UID; the token DB
-# under ./data stays private (0600).
+# under ./data stays private (0600 — readable by the owning UID only).
 # Override per-deployment by editing the bind-mount source paths below or by
 # layering a docker-compose.override.yml.
 #
 # When the stored TIDAL refresh token is revoked, the daemon logs an actionable
 # message and keeps polling; re-authenticate interactively to recover:
-#   docker compose run --rm tidal-syncer login
+#   make login        # inherits your UID/GID; raw `docker compose run` would use 65532
 #
 # No top-level `version:` key — Compose v2 deprecated it; `docker compose config`
 # warns when present.
@@ -31,9 +35,10 @@ services:
     # whose bundled ffmpeg would die with "exec format error".
     platform: linux/amd64
     # Default command: long-running poll daemon (configurable in config.yaml).
-    # Override for one-off use: `docker compose run --rm tidal-syncer sync`.
+    # Override for a one-off run (default is the poll daemon), e.g.:
+    #   PUID=$(id -u) PGID=$(id -g) docker compose run --rm tidal-syncer sync
     command: ["daemon"]
-    user: "65532:65532"
+    user: "${PUID:-65532}:${PGID:-65532}"
     restart: unless-stopped
     # Headroom over the in-process <5s graceful-shutdown budget; the container is
     # SIGKILLed only if the binary does not exit cleanly within 30s of SIGTERM.

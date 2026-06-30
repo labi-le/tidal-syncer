@@ -21,7 +21,11 @@ LDFLAGS=-ldflags="-X '${FULL_PACKAGE}/internal/buildinfo.Version=${VERSION}' \
 
 DOCKER_IMAGE ?= tidal-syncer:dev
 
-.phony: run build clean tests test-race lint docker-build docker-run compose-up logs
+# Run compose containers as the host user so ./Music and ./data are owned by you (not 65532).
+export PUID ?= $(shell id -u)
+export PGID ?= $(shell id -g)
+
+.phony: run build clean tests test-race lint docker-build docker-run up down ps logs login
 
 run:
 	go run $(MAIN_PATH)
@@ -47,8 +51,17 @@ docker-build:
 docker-run:
 	docker run --rm -it $(DOCKER_IMAGE)
 
-compose-up:
+up:
 	docker compose up -d
+
+down:
+	docker compose down
+
+ps:
+	docker compose ps
 
 logs:
 	docker compose logs -f
+
+login:
+	docker compose run --rm tidal-syncer login

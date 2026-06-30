@@ -75,18 +75,18 @@ Deviations from vanilla Go ONLY (from .golangci.yml v2.7.2 strict):
 
 ```bash
 # Go tooling ONLY via nix-shell; docker runs on the HOST (not nix-wrapped)
-nix-shell --run 'go build ./cmd/... ./internal/... ./pkg/...'   # NOT ./...  (Music/ perms break the walker)
+nix-shell --run 'go build ./cmd/... ./internal/... ./pkg/...'   # explicit roots (safe even if the 65532 fallback left foreign-owned dirs)
 nix-shell --run 'go test ./cmd/... ./internal/... ./pkg/...'
 nix-shell --run 'golangci-lint run ./cmd/... ./internal/... ./pkg/...'
-make build | run | tests | test-race | lint | docker-build | docker-run | compose-up | logs
+make build | run | tests | test-race | lint | docker-build | docker-run | up | down | ps | logs | login
 docker compose run --rm tidal-syncer <login|sync|daemon|health>   # one-off
 ```
 
 ## NOTES (gotchas)
-- `go ./...` BREAKS: `Music/` is owned by container UID 65532 (0750) → use the explicit `./cmd/... ./internal/... ./pkg/...` roots.
+- `go ./...` walks `Music/`+`data/`. Under the PUID/PGID model they're host-owned (`go list ./...` is clean), but the bare-`docker compose` 65532 fallback can leave foreign-owned dirs that break the walker → keep using the explicit `./cmd/... ./internal/... ./pkg/...` roots.
 - `config.yaml` is gitignored and MUST pre-exist as a real file before `docker compose` (else the bind-mount auto-creates a directory and startup fails). Contains TIDAL client_id/secret; token persists in `data/` (also gitignored).
-- `Music/` and `data/` must be writable by the nonroot container (UID 65532) → `chmod 777` (host user can't chown to another uid).
+- `Music/`+`data/` are written by the container as `PUID:PGID`; the Makefile auto-sets these to your `id -u`/`id -g` for every `make` compose target, so the library + DB stay host-owned — no `chmod 777` needed. Only the bare-`docker compose` 65532 fallback needs world-writable dirs (`chmod 777`, since the host can't chown to a foreign UID).
 - Image is **distroless** (no shell); `ffmpeg` at `/usr/local/bin/ffmpeg` but there is **no ffprobe** — inspect files with `ffmpeg -i` or a throwaway `alpine` container.
-- `docker compose run` is a one-off container NOT shown by `docker compose logs` — follow it with `docker logs -f <…-run-…>`; `make logs`/`make compose-up` are for the daemon service.
+- `docker compose run` is a one-off container NOT shown by `docker compose logs` — follow it with `docker logs -f <…-run-…>`; `make logs`/`make up` are for the daemon service.
 - TIDAL account must be HiFi/HiFi-Plus for `LOSSLESS`/`HI_RES_LOSSLESS`. The working device client `cgiF7TQuB97BUIu3` DOES grant 24-bit `HI_RES_LOSSLESS` over the device flow — verified end-to-end (a DASH grant demuxes to a 24-bit/48 kHz FLAC); NO PKCE/mobile-client flow is required. Caveat: the v1 `Track.AudioQuality` ("advertised") field maxes out at `LOSSLESS` and cannot express hi-res (signaled only via `mediaMetadata.tags`, currently unparsed) — judge hi-res by the GRANTED tier from `playbackinfo`, never by advertised quality.
 - `internal/version.go` makes `internal` itself an importable package; version injected via `-ldflags -X github.com/labi-le/tidal-syncer/internal.{Version,CommitHash,BuildTime}`.
