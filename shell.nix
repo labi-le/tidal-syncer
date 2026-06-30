@@ -158,6 +158,7 @@ pkgs.mkShell {
     ffmpeg
     yq-go
     jq
+    sqlite-interactive
     git
     init-template
   ];
