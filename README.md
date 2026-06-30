@@ -60,3 +60,43 @@ tidal-syncer sync --config ./config.yaml
 # Run as daemon
 tidal-syncer daemon
 ```
+
+## Querying the library (SQLite)
+
+Sync state lives in `data/tidal-syncer.db`. To list your most recently
+favorited tracks with artist, album and genre:
+
+```sql
+WITH joined AS (
+  SELECT f.name AS title, f.added_at, t.genre,
+         substr(t.path, length('/app/Music/') + 1) AS rel
+  FROM favorites_snapshot f
+  JOIN tracks t ON t.tidal_id = f.tidal_id
+  WHERE f.kind = 'tracks' AND f.added_at <> '' AND t.path <> ''
+),
+split AS (
+  SELECT title, added_at, genre,
+         substr(rel, 1, instr(rel, '/') - 1) AS artist,
+         substr(rel, instr(rel, '/') + 1) AS after_artist
+  FROM joined
+)
+SELECT artist,
+       substr(after_artist, 1, instr(after_artist, '/') - 1) AS album,
+       title, genre, added_at
+FROM split
+ORDER BY added_at DESC
+LIMIT 300;
+```
+
+Run it with:
+
+```sh
+nix-shell --run "sqlite3 -header -column data/tidal-syncer.db"
+# then paste the query, or pass it inline with -cmd
+```
+
+- `artist` and `album` are parsed from `tracks.path`
+  (`/app/Music/{albumartist}/{album}/{NN} - {title}.flac`).
+- `genre` is a `;`-joined list — filter with e.g. `WHERE genre LIKE '%Metal%'`.
+- `added_at` is the favorite-add date; use `ORDER BY t.updated_at DESC` for
+  download order instead. The join skips failed tracks (they have no file).

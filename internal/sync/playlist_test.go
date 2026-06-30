@@ -33,8 +33,8 @@ func (f *fakePlaylistClient) UserID(_ context.Context) (string, error) {
 	return "", nil
 }
 
-func (f *fakePlaylistClient) FavoriteTracks(_ context.Context) iter.Seq2[tidal.Track, error] {
-	return seqOf[tidal.Track](nil)
+func (f *fakePlaylistClient) FavoriteTracks(_ context.Context) iter.Seq2[tidal.FavoriteTrack, error] {
+	return seqOf[tidal.FavoriteTrack](nil)
 }
 
 func (f *fakePlaylistClient) FavoriteAlbums(_ context.Context) iter.Seq2[tidal.Album, error] {
@@ -67,6 +67,10 @@ func (f *fakePlaylistClient) Album(_ context.Context, id string) (tidal.Album, e
 
 func (f *fakePlaylistClient) Lyrics(_ context.Context, _ string) (tidal.Lyrics, error) {
 	return tidal.Lyrics{}, nil
+}
+
+func (f *fakePlaylistClient) TrackGenres(_ context.Context, _ string) ([]string, error) {
+	return nil, nil
 }
 
 // TestPlaylistWriterWritesM3U8WithRelativePaths exports a three-track playlist

@@ -15,16 +15,16 @@ const coverMIMEType = "image/jpeg"
 // field here because TagFile accepts them separately: they may be embedded, or
 // written as a sidecar, independently of these tags.
 type Meta struct {
-	Title       string // Track title (TITLE).
-	Artist      string // Track artist (ARTIST).
-	AlbumArtist string // Album-level artist (ALBUMARTIST); handles compilations.
-	Album       string // Album title (ALBUM).
-	TrackNumber int    // Track number within its disc (TRACKNUMBER).
-	DiscNumber  int    // Disc number within the album (DISCNUMBER).
-	Date        string // Release date or year, e.g. "2026" (DATE).
-	Genre       string // Musical genre (GENRE).
-	ISRC        string // International Standard Recording Code (ISRC).
-	Copyright   string // Copyright / rights statement (COPYRIGHT).
+	Title       string   // Track title (TITLE).
+	Artist      string   // Track artist (ARTIST).
+	AlbumArtist string   // Album-level artist (ALBUMARTIST); handles compilations.
+	Album       string   // Album title (ALBUM).
+	TrackNumber int      // Track number within its disc (TRACKNUMBER).
+	DiscNumber  int      // Disc number within the album (DISCNUMBER).
+	Date        string   // Release date or year, e.g. "2026" (DATE).
+	Genre       []string // Musical genres (GENRE); each value becomes a repeated comment.
+	ISRC        string   // International Standard Recording Code (ISRC).
+	Copyright   string   // Copyright / rights statement (COPYRIGHT).
 }
 
 // TagFile writes m as Vorbis comments to the FLAC at path and, when supplied,
@@ -41,7 +41,7 @@ func TagFile(path string, m Meta, coverJPEG []byte, plainLyrics string) error { 
 		taglib.TrackNumber: {strconv.Itoa(m.TrackNumber)},
 		taglib.DiscNumber:  {strconv.Itoa(m.DiscNumber)},
 		taglib.Date:        {m.Date},
-		taglib.Genre:       {m.Genre},
+		taglib.Genre:       m.Genre,
 		taglib.ISRC:        {m.ISRC},
 		taglib.Copyright:   {m.Copyright},
 	}
@@ -58,4 +58,16 @@ func TagFile(path string, m Meta, coverJPEG []byte, plainLyrics string) error { 
 	}
 
 	return WriteImage(path, coverJPEG, coverMIMEType)
+}
+
+// ReadGenre returns the GENRE Vorbis comments from the FLAC at path in file
+// order, or an empty slice when the file carries none. It lets callers read
+// genres back without depending on the taglib comment keys directly.
+func ReadGenre(path string) ([]string, error) {
+	tags, err := ReadTags(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return tags[taglib.Genre], nil
 }

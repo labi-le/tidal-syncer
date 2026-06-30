@@ -20,7 +20,10 @@ const playlistsPath = "/playlists/"
 // once with a zero-value track. See [Client.FavoriteTracks] for the contract.
 func (c *Client) AlbumTracks(ctx context.Context, albumID string) iter.Seq2[Track, error] {
 	return func(yield func(Track, error) bool) {
-		emitFavorites[Track](ctx, c, albumsPath+albumID+itemsSuffix, yield)
+		emitFavorites[Track](ctx, c, albumsPath+albumID+itemsSuffix,
+			func(entry favoriteEntry[Track], err error) bool {
+				return yield(entry.Item, err)
+			})
 	}
 }
 
@@ -29,6 +32,9 @@ func (c *Client) AlbumTracks(ctx context.Context, albumID string) iter.Seq2[Trac
 // error contract.
 func (c *Client) PlaylistTracks(ctx context.Context, playlistUUID string) iter.Seq2[Track, error] {
 	return func(yield func(Track, error) bool) {
-		emitFavorites[Track](ctx, c, playlistsPath+playlistUUID+itemsSuffix, yield)
+		emitFavorites[Track](ctx, c, playlistsPath+playlistUUID+itemsSuffix,
+			func(entry favoriteEntry[Track], err error) bool {
+				return yield(entry.Item, err)
+			})
 	}
 }

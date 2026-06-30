@@ -97,10 +97,10 @@ type jitterTestClient struct {
 
 func (j jitterTestClient) UserID(context.Context) (string, error) { return "user", nil }
 
-func (j jitterTestClient) FavoriteTracks(context.Context) iter.Seq2[tidal.Track, error] {
-	return func(yield func(tidal.Track, error) bool) {
+func (j jitterTestClient) FavoriteTracks(context.Context) iter.Seq2[tidal.FavoriteTrack, error] {
+	return func(yield func(tidal.FavoriteTrack, error) bool) {
 		for _, track := range j.tracks {
-			if !yield(track, nil) {
+			if !yield(tidal.FavoriteTrack{Track: track}, nil) {
 				return
 			}
 		}
@@ -127,6 +127,10 @@ func (j jitterTestClient) Album(context.Context, string) (tidal.Album, error) { 
 
 func (j jitterTestClient) Lyrics(context.Context, string) (tidal.Lyrics, error) {
 	return tidal.Lyrics{}, nil
+}
+
+func (j jitterTestClient) TrackGenres(context.Context, string) ([]string, error) {
+	return nil, nil
 }
 
 type jitterTestDownloader struct{ src string }

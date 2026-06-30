@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/labi-le/tidal-syncer/internal/config"
 	"github.com/labi-le/tidal-syncer/internal/store"
 	synceng "github.com/labi-le/tidal-syncer/internal/sync"
+	"github.com/labi-le/tidal-syncer/internal/tag"
 	"github.com/labi-le/tidal-syncer/pkg/tidal"
 )
 
@@ -65,6 +67,45 @@ func TestSyncIdempotent(t *testing.T) {
 	}
 	if second.Downloaded != 0 || second.Skipped != want {
 		t.Fatalf("second run downloaded=%d skipped=%d, want downloaded=0 skipped=%d", second.Downloaded, second.Skipped, want)
+	}
+}
+
+// TestSyncCarriesFavoriteAddedDateIntoSnapshot locks the favorite-ordering
+// feature: the favorite-add timestamp the client reports for a track must surface
+// on the matching snapshot item so the caller can persist and order the library
+// by when each track was favorited.
+func TestSyncCarriesFavoriteAddedDateIntoSnapshot(t *testing.T) {
+	const addedAt = "2026-06-30T00:00:00.000+0000"
+	client := &fakeClient{
+		userID:        testUserID,
+		favTracks:     []tidal.Track{makeTrack(trackA, albumOne, coverOne)},
+		favTrackDates: map[int]string{trackA: addedAt},
+		albums:        map[string]tidal.Album{strconv.Itoa(albumOne): makeAlbum(albumOne, coverOne)},
+	}
+	dl := &fakeDownloader{src: fixtureFLAC, quality: gotQuality, failIDs: map[string]bool{}}
+	covers := &fakeCovers{jpeg: minimalJPEG(t)}
+	cfg := baseConfig(t, config.Scope{Favorites: config.Favorites{Tracks: true}})
+	engine := newEngine(t, client, dl, covers, cfg)
+
+	_, snapshot, err := engine.SyncOnce(context.Background())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	want := strconv.Itoa(trackA)
+	found := -1
+	for i := range snapshot {
+		if snapshot[i].TidalID == want {
+			found = i
+
+			break
+		}
+	}
+	if found < 0 {
+		t.Fatalf("snapshot %+v missing item for track %s", snapshot, want)
+	}
+	if snapshot[found].AddedAt != addedAt {
+		t.Fatalf("snapshot AddedAt = %q, want %q", snapshot[found].AddedAt, addedAt)
 	}
 }
 
@@ -314,5 +355,54 @@ func makeAlbum(id int, cover string) tidal.Album {
 		Copyright:       "(C) Label",
 		Artists:         []tidal.Artist{{ID: 1, Name: "Artist", Type: "MAIN"}},
 		Cover:           cover,
+	}
+}
+
+func TestSyncBackfillsGenreFromFileTags(t *testing.T) {
+	// Given a done track stored without a genre whose FLAC carries GENRE tags.
+	ctx := context.Background()
+	st := newTestStore(t)
+	path := filepath.Join(t.TempDir(), "x.flac")
+	data, err := os.ReadFile(fixtureFLAC)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if err = os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write copy: %v", err)
+	}
+	if err = tag.TagFile(path, tag.Meta{Title: "T", Genre: []string{"Rock", "Metal"}}, nil, ""); err != nil {
+		t.Fatalf("tag fixture: %v", err)
+	}
+	if err = st.MarkTrack(ctx, store.Track{
+		TidalID:          strconv.Itoa(trackA),
+		Path:             path,
+		ObtainedQuality:  gotQuality,
+		RequestedQuality: reqQuality,
+		Status:           store.StatusDone,
+	}); err != nil {
+		t.Fatalf("seed track: %v", err)
+	}
+	engine := synceng.NewEngine(synceng.Params{
+		Store:      st,
+		Client:     &fakeClient{userID: testUserID},
+		Downloader: &fakeDownloader{src: fixtureFLAC, failIDs: map[string]bool{}},
+		Covers:     &fakeCovers{jpeg: minimalJPEG(t)},
+		Config:     baseConfig(t, config.Scope{Favorites: config.Favorites{Tracks: true}}),
+		Logger:     zerolog.Nop(),
+		Limiter:    rate.NewLimiter(rate.Inf, 1),
+	})
+
+	// When a sync runs: empty favorites mean no downloads, but backfill runs first.
+	if _, _, err = engine.SyncOnce(ctx); err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+
+	// Then the genre column is backfilled from the file's Vorbis tags.
+	got, err := st.GetTrack(ctx, strconv.Itoa(trackA))
+	if err != nil {
+		t.Fatalf("get track: %v", err)
+	}
+	if got.Genre != "Rock;Metal" {
+		t.Fatalf("genre = %q, want %q", got.Genre, "Rock;Metal")
 	}
 }

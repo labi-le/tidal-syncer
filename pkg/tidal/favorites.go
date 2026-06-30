@@ -19,10 +19,13 @@ const (
 	favoriteKindPlaylists = "playlists"
 )
 
-// favoriteEntry wraps one favorited item. TIDAL nests the entity under "item".
+// favoriteEntry wraps one favorited item. TIDAL nests the entity under "item"
+// and stamps each entry with the instant it was favorited under "created".
 type favoriteEntry[T any] struct {
 	// Item is the favorited entity.
 	Item T `json:"item"`
+	// Created is the TIDAL timestamp at which the item was added to favorites.
+	Created string `json:"created"`
 }
 
 // favoritesPage is one page of a favorites listing.
@@ -38,40 +41,77 @@ type favoritesPage[T any] struct {
 	Items []favoriteEntry[T] `json:"items"`
 }
 
-// FavoriteTracks streams the authenticated user's favorite tracks, fetching one
-// page at a time so the whole library is never held in memory. Iteration stops
-// at the first error, which is yielded once with a zero-value item.
-func (c *Client) FavoriteTracks(ctx context.Context) iter.Seq2[Track, error] {
-	return streamFavorites[Track](ctx, c, favoriteKindTracks)
+// FavoriteTrack is a favorited track paired with the instant it was added to the
+// user's favorites. AddedAt is a TIDAL timestamp such as
+// 2024-04-12T21:51:19.759+0000 and is empty only when TIDAL omits it.
+type FavoriteTrack struct {
+	Track   Track
+	AddedAt string
+}
+
+// FavoriteTracks streams the authenticated user's favorite tracks, each paired
+// with its favorite-add date, fetching one page at a time so the whole library
+// is never held in memory. Iteration stops at the first error, which is yielded
+// once with a zero-value item.
+func (c *Client) FavoriteTracks(ctx context.Context) iter.Seq2[FavoriteTrack, error] {
+	return func(yield func(FavoriteTrack, error) bool) {
+		for entry, err := range streamFavorites[Track](ctx, c, favoriteKindTracks) {
+			if err != nil {
+				yield(FavoriteTrack{}, err)
+				return
+			}
+			if !yield(FavoriteTrack{Track: entry.Item, AddedAt: entry.Created}, nil) {
+				return
+			}
+		}
+	}
 }
 
 // FavoriteAlbums streams the authenticated user's favorite albums one page at a
 // time. See [Client.FavoriteTracks] for the streaming and error contract.
 func (c *Client) FavoriteAlbums(ctx context.Context) iter.Seq2[Album, error] {
-	return streamFavorites[Album](ctx, c, favoriteKindAlbums)
+	return favoriteItems[Album](ctx, c, favoriteKindAlbums)
 }
 
 // FavoriteArtists streams the authenticated user's favorite artists one page at
 // a time. See [Client.FavoriteTracks] for the streaming and error contract.
 func (c *Client) FavoriteArtists(ctx context.Context) iter.Seq2[Artist, error] {
-	return streamFavorites[Artist](ctx, c, favoriteKindArtists)
+	return favoriteItems[Artist](ctx, c, favoriteKindArtists)
 }
 
 // FavoritePlaylists streams the authenticated user's favorite playlists one page
 // at a time. See [Client.FavoriteTracks] for the streaming and error contract.
 func (c *Client) FavoritePlaylists(ctx context.Context) iter.Seq2[Playlist, error] {
-	return streamFavorites[Playlist](ctx, c, favoriteKindPlaylists)
+	return favoriteItems[Playlist](ctx, c, favoriteKindPlaylists)
 }
 
-// streamFavorites returns an iterator over a favorites collection. The user id
-// is resolved lazily on first iteration; any error (token, transport, or
-// decode) is yielded once with a zero-value item and ends the stream.
-func streamFavorites[T any](ctx context.Context, c *Client, kind string) iter.Seq2[T, error] {
+// favoriteItems streams just the favorited entities for kind, discarding the
+// per-entry favorite-add date. It backs the album, artist and playlist streams,
+// which do not need the date.
+func favoriteItems[T any](ctx context.Context, c *Client, kind string) iter.Seq2[T, error] {
 	return func(yield func(T, error) bool) {
+		for entry, err := range streamFavorites[T](ctx, c, kind) {
+			if err != nil {
+				var zero T
+				yield(zero, err)
+				return
+			}
+			if !yield(entry.Item, nil) {
+				return
+			}
+		}
+	}
+}
+
+// streamFavorites returns an iterator over a favorites collection, yielding each
+// entry with its favorite-add date. The user id is resolved lazily on first
+// iteration; any error (token, transport, or decode) is yielded once with a
+// zero-value entry and ends the stream.
+func streamFavorites[T any](ctx context.Context, c *Client, kind string) iter.Seq2[favoriteEntry[T], error] {
+	return func(yield func(favoriteEntry[T], error) bool) {
 		userID, err := c.UserID(ctx)
 		if err != nil {
-			var zero T
-			yield(zero, err)
+			yield(favoriteEntry[T]{}, err)
 			return
 		}
 		emitFavorites[T](ctx, c, "/users/"+userID+"/favorites/"+kind, yield)
@@ -79,18 +119,19 @@ func streamFavorites[T any](ctx context.Context, c *Client, kind string) iter.Se
 }
 
 // emitFavorites pages through the favorites collection at path, yielding each
-// item in order. It stops on the first error, on an empty page, or once the
+// entry in order. It stops on the first error, on an empty page, or once the
 // reported total has been reached, holding at most one page in memory.
-func emitFavorites[T any](ctx context.Context, c *Client, path string, yield func(T, error) bool) {
+func emitFavorites[T any](
+	ctx context.Context, c *Client, path string, yield func(favoriteEntry[T], error) bool,
+) {
 	for offset := 0; ; {
 		page, err := fetchFavoritesPage[T](ctx, c, path, offset)
 		if err != nil {
-			var zero T
-			yield(zero, err)
+			yield(favoriteEntry[T]{}, err)
 			return
 		}
 		for i := range page.Items {
-			if !yield(page.Items[i].Item, nil) {
+			if !yield(page.Items[i], nil) {
 				return
 			}
 		}

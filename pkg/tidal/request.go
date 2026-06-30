@@ -19,7 +19,14 @@ func (c *Client) getJSON(ctx context.Context, path string, query url.Values, dst
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if err = json.NewDecoder(resp.Body).Decode(dst); err != nil {
+	return decodeJSON(resp, path, dst)
+}
+
+// decodeJSON decodes resp.Body into dst, wrapping a decode failure with the
+// request path for context. It is shared by the v1 and v2 GET helpers; the
+// caller owns and closes resp.Body.
+func decodeJSON(resp *http.Response, path string, dst any) error {
+	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
 		return fmt.Errorf("tidal: decode %s: %w", path, err)
 	}
 	return nil

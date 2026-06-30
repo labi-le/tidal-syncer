@@ -19,6 +19,9 @@ import (
 const (
 	// DefaultBaseURL is the production TIDAL API v1 base URL.
 	DefaultBaseURL = "https://api.tidal.com/v1"
+	// DefaultV2BaseURL is the production TIDAL openapi v2 base URL, used only for
+	// the genre lookups the v1 API does not expose.
+	DefaultV2BaseURL = "https://openapi.tidal.com/v2"
 	// DefaultRequestsPerMinute is the default client-side request rate limit.
 	DefaultRequestsPerMinute = 60
 	// DefaultRetryMax is the default number of retries for transient failures.
@@ -55,6 +58,7 @@ type Client struct {
 	limiter    *rate.Limiter
 	tokens     TokenSource
 	baseURL    string
+	v2BaseURL  string
 }
 
 // New constructs a Client that authenticates every request through tokens.
@@ -62,6 +66,7 @@ type Client struct {
 func New(tokens TokenSource, opts ...Option) *Client {
 	cfg := config{
 		baseURL:           DefaultBaseURL,
+		v2BaseURL:         DefaultV2BaseURL,
 		requestsPerMinute: DefaultRequestsPerMinute,
 		retryMax:          DefaultRetryMax,
 		retryWaitMin:      DefaultRetryWaitMin,
@@ -87,6 +92,7 @@ func New(tokens TokenSource, opts ...Option) *Client {
 		limiter:    rate.NewLimiter(rate.Every(interval), rateLimitBurst),
 		tokens:     tokens,
 		baseURL:    cfg.baseURL,
+		v2BaseURL:  cfg.v2BaseURL,
 	}
 }
 
@@ -100,8 +106,19 @@ func (c *Client) UserID(ctx context.Context) (string, error) {
 	return userID, nil
 }
 
-// Do executes an authenticated, rate-limited request against the TIDAL API and
-// returns the raw response. The path is resolved against the configured base
+// apiRequest describes a single API call. method, path and query are the usual
+// HTTP inputs; baseURL and accept select the API version, since the v1 API
+// speaks plain JSON while the v2 catalog speaks JSON:API at a different host.
+type apiRequest struct {
+	method  string
+	baseURL string
+	accept  string
+	path    string
+	query   url.Values
+}
+
+// Do executes an authenticated, rate-limited request against the TIDAL v1 API
+// and returns the raw response. The path is resolved against the configured base
 // URL, and the caller's query is merged with the mandatory countryCode
 // parameter taken from the [TokenSource].
 //
@@ -113,6 +130,20 @@ func (c *Client) Do(
 	method, path string,
 	query url.Values,
 ) (*http.Response, error) {
+	return c.do(ctx, apiRequest{
+		method:  method,
+		baseURL: c.baseURL,
+		accept:  jsonMediaType,
+		path:    path,
+		query:   query,
+	})
+}
+
+// do is the shared transport for every API version: it authenticates, waits on
+// the rate limiter, resolves r against its base URL, sets its Accept type, and
+// classifies the result. The error and body-ownership contract is the one
+// documented on [Client.Do].
+func (c *Client) do(ctx context.Context, r apiRequest) (*http.Response, error) {
 	access, countryCode, _, err := c.tokens.Token(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("tidal: token source: %w", err)
@@ -122,21 +153,21 @@ func (c *Client) Do(
 		return nil, fmt.Errorf("tidal: rate limit: %w", waitErr)
 	}
 
-	endpoint, err := c.resolve(path, countryCode, query)
+	endpoint, err := resolve(r, countryCode)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := retryablehttp.NewRequestWithContext(ctx, method, endpoint, nil)
+	req, err := retryablehttp.NewRequestWithContext(ctx, r.method, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("tidal: new request: %w", err)
 	}
 	req.Header.Set(authorizationHeader, bearerPrefix+access)
-	req.Header.Set(acceptHeader, jsonMediaType)
+	req.Header.Set(acceptHeader, r.accept)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("tidal: %s %s: %w", method, path, err)
+		return nil, fmt.Errorf("tidal: %s %s: %w", r.method, r.path, err)
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -146,17 +177,17 @@ func (c *Client) Do(
 	return resp, nil
 }
 
-// resolve builds the absolute request URL by joining path onto the base URL and
-// merging query with the mandatory countryCode parameter.
-func (c *Client) resolve(path, countryCode string, query url.Values) (string, error) {
-	base, err := url.Parse(c.baseURL)
+// resolve builds the absolute request URL by joining r.path onto r.baseURL and
+// merging r.query with the mandatory countryCode parameter.
+func resolve(r apiRequest, countryCode string) (string, error) {
+	base, err := url.Parse(r.baseURL)
 	if err != nil {
 		return "", fmt.Errorf("tidal: parse base url: %w", err)
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.TrimLeft(path, "/")
+	base.Path = strings.TrimRight(base.Path, "/") + "/" + strings.TrimLeft(r.path, "/")
 
 	merged := base.Query()
-	for key, values := range query {
+	for key, values := range r.query {
 		for _, value := range values {
 			merged.Add(key, value)
 		}

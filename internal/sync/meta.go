@@ -33,8 +33,9 @@ func buildTrackMeta(track tidal.Track, album tidal.Album) namer.TrackMeta {
 	}
 }
 
-// buildTagMeta projects a track and its album onto the Vorbis-comment fields.
-func buildTagMeta(track tidal.Track, album tidal.Album) tag.Meta {
+// buildTagMeta projects a track, its album and its genres onto the
+// Vorbis-comment fields.
+func buildTagMeta(track tidal.Track, album tidal.Album, genres []string) tag.Meta {
 	return tag.Meta{
 		Title:       track.Title,
 		Artist:      primaryArtist(track.Artists),
@@ -43,7 +44,7 @@ func buildTagMeta(track tidal.Track, album tidal.Album) tag.Meta {
 		TrackNumber: track.TrackNumber,
 		DiscNumber:  track.VolumeNumber,
 		Date:        album.ReleaseDate,
-		Genre:       "",
+		Genre:       genres,
 		ISRC:        track.ISRC,
 		Copyright:   track.Copyright,
 	}

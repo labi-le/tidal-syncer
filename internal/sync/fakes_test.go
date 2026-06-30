@@ -38,20 +38,28 @@ func seqOf[T any](items []T) iter.Seq2[T, error] {
 type fakeClient struct {
 	userID         string
 	favTracks      []tidal.Track
+	favTrackDates  map[int]string
 	favAlbums      []tidal.Album
 	favPlaylists   []tidal.Playlist
 	albumTracks    map[string][]tidal.Track
 	playlistTracks map[string][]tidal.Track
 	albums         map[string]tidal.Album
 	lyrics         map[string]tidal.Lyrics
+	genres         map[string][]string
 }
 
 func (f *fakeClient) UserID(_ context.Context) (string, error) {
 	return f.userID, nil
 }
 
-func (f *fakeClient) FavoriteTracks(_ context.Context) iter.Seq2[tidal.Track, error] {
-	return seqOf(f.favTracks)
+func (f *fakeClient) FavoriteTracks(_ context.Context) iter.Seq2[tidal.FavoriteTrack, error] {
+	return func(yield func(tidal.FavoriteTrack, error) bool) {
+		for _, track := range f.favTracks {
+			if !yield(tidal.FavoriteTrack{Track: track, AddedAt: f.favTrackDates[track.ID]}, nil) {
+				return
+			}
+		}
+	}
 }
 
 func (f *fakeClient) FavoriteAlbums(_ context.Context) iter.Seq2[tidal.Album, error] {
@@ -81,6 +89,10 @@ func (f *fakeClient) Album(_ context.Context, id string) (tidal.Album, error) {
 
 func (f *fakeClient) Lyrics(_ context.Context, id string) (tidal.Lyrics, error) {
 	return f.lyrics[id], nil
+}
+
+func (f *fakeClient) TrackGenres(_ context.Context, id string) ([]string, error) {
+	return f.genres[id], nil
 }
 
 // fakeDownloader copies a real FLAC fixture to the destination, counting calls

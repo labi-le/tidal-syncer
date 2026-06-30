@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/rs/zerolog"
 
@@ -26,6 +27,9 @@ const (
 	musicDirMode os.FileMode = 0o755
 	// opProcessTrack scopes the logger for the per-track pipeline.
 	opProcessTrack = "sync.processTrack"
+	// genreSeparator joins a track's genres into the single store.Track.Genre
+	// column for SQL querying; the FLAC file keeps each genre as its own comment.
+	genreSeparator = ";"
 )
 
 // processTrack runs the full per-track pipeline, recording the outcome in the
@@ -83,6 +87,7 @@ func (e *Engine) downloadOne(ctx context.Context, log zerolog.Logger, track tida
 		return err
 	}
 	lyrics := e.fetchLyrics(ctx, log, track)
+	genres := e.fetchGenres(ctx, log, track)
 
 	rel, err := namer.Render(e.config.PathTemplate, buildTrackMeta(track, album))
 	if err != nil {
@@ -112,11 +117,11 @@ func (e *Engine) downloadOne(ctx context.Context, log zerolog.Logger, track tida
 	if err = tag.IntegrityCheck(dest); err != nil {
 		return fmt.Errorf("verify track %d: %w", track.ID, err)
 	}
-	if err = e.writeTags(dest, track, album, cover, lyrics); err != nil {
+	if err = e.writeTags(dest, track, album, trackTags{cover: cover, lyrics: lyrics, genres: genres}); err != nil {
 		return err
 	}
 
-	if err = e.markDone(ctx, track, dest, quality); err != nil {
+	if err = e.markDone(ctx, track, dest, quality, genres); err != nil {
 		return err
 	}
 	log.Debug().
@@ -177,20 +182,40 @@ func (e *Engine) fetchLyrics(ctx context.Context, log zerolog.Logger, track tida
 	return lyrics
 }
 
+// fetchGenres retrieves a track's genres best-effort. The v1 API does not expose
+// genre, so this hits the v2 catalog; a fetch error yields no genres rather than
+// failing the track.
+func (e *Engine) fetchGenres(ctx context.Context, log zerolog.Logger, track tidal.Track) []string {
+	genres, err := e.client.TrackGenres(ctx, strconv.Itoa(track.ID))
+	if err != nil {
+		log.Debug().Err(err).Int("track", track.ID).Msg("genre fetch failed")
+
+		return nil
+	}
+
+	return genres
+}
+
+// trackTags bundles the optional, best-effort metadata written alongside a
+// downloaded track: cover artwork, lyrics, and genres.
+type trackTags struct {
+	cover  []byte
+	lyrics tidal.Lyrics
+	genres []string
+}
+
 // writeTags writes Vorbis comments and, per configuration, embeds plain lyrics
 // and writes an LRC sidecar.
-func (e *Engine) writeTags(
-	dest string, track tidal.Track, album tidal.Album, cover []byte, lyrics tidal.Lyrics,
-) error {
+func (e *Engine) writeTags(dest string, track tidal.Track, album tidal.Album, tags trackTags) error {
 	plain := ""
 	if e.config.Lyrics.Embed {
-		plain = lyrics.Plain
+		plain = tags.lyrics.Plain
 	}
-	if err := tag.TagFile(dest, buildTagMeta(track, album), cover, plain); err != nil {
+	if err := tag.TagFile(dest, buildTagMeta(track, album, tags.genres), tags.cover, plain); err != nil {
 		return fmt.Errorf("tag track %d: %w", track.ID, err)
 	}
-	if e.config.Lyrics.Sidecar && lyrics.LRC != "" {
-		if err := tag.WriteLRC(dest, lyrics.LRC); err != nil {
+	if e.config.Lyrics.Sidecar && tags.lyrics.LRC != "" {
+		if err := tag.WriteLRC(dest, tags.lyrics.LRC); err != nil {
 			return fmt.Errorf("write lyrics for track %d: %w", track.ID, err)
 		}
 	}
@@ -199,7 +224,9 @@ func (e *Engine) writeTags(
 }
 
 // markDone records a successful download in the store.
-func (e *Engine) markDone(ctx context.Context, track tidal.Track, dest string, quality tidal.Quality) error {
+func (e *Engine) markDone(
+	ctx context.Context, track tidal.Track, dest string, quality tidal.Quality, genres []string,
+) error {
 	record := store.Track{
 		TidalID:          strconv.Itoa(track.ID),
 		ISRC:             track.ISRC,
@@ -207,6 +234,7 @@ func (e *Engine) markDone(ctx context.Context, track tidal.Track, dest string, q
 		Path:             dest,
 		ObtainedQuality:  string(quality),
 		RequestedQuality: string(e.config.Quality.Request),
+		Genre:            strings.Join(genres, genreSeparator),
 		Status:           store.StatusDone,
 		UpdatedAt:        0,
 	}

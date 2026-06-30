@@ -10,6 +10,7 @@ import (
 type SnapshotItem struct {
 	TidalID string
 	Name    string
+	AddedAt string
 }
 
 // ReplaceSnapshot atomically replaces the stored snapshot for kind with items.
@@ -24,9 +25,9 @@ func (s *Store) ReplaceSnapshot(ctx context.Context, kind string, items []Snapsh
 		return fmt.Errorf("clear snapshot %q: %w", kind, err)
 	}
 
-	const ins = `INSERT INTO favorites_snapshot (kind, tidal_id, name) VALUES (?, ?, ?)`
+	const ins = `INSERT INTO favorites_snapshot (kind, tidal_id, name, added_at) VALUES (?, ?, ?, ?)`
 	for _, item := range items {
-		if _, err = tx.ExecContext(ctx, ins, kind, item.TidalID, item.Name); err != nil {
+		if _, err = tx.ExecContext(ctx, ins, kind, item.TidalID, item.Name, item.AddedAt); err != nil {
 			return fmt.Errorf("insert snapshot %q row %q: %w", kind, item.TidalID, err)
 		}
 	}
@@ -36,6 +37,33 @@ func (s *Store) ReplaceSnapshot(ctx context.Context, kind string, items []Snapsh
 	}
 
 	return nil
+}
+
+// FavoritesByRecency returns the snapshot items for kind that carry an add date,
+// newest first, capped at limit. Items without a favorite-add date (those pulled
+// in only by a favorited album or playlist) are excluded.
+func (s *Store) FavoritesByRecency(ctx context.Context, kind string, limit int) ([]SnapshotItem, error) {
+	const q = `SELECT tidal_id, name, added_at FROM favorites_snapshot ` +
+		`WHERE kind = ? AND added_at != '' ORDER BY added_at DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, kind, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query favorites by recency %q: %w", kind, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var items []SnapshotItem
+	for rows.Next() {
+		var item SnapshotItem
+		if err = rows.Scan(&item.TidalID, &item.Name, &item.AddedAt); err != nil {
+			return nil, fmt.Errorf("scan favorite row: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate favorites by recency %q: %w", kind, err)
+	}
+
+	return items, nil
 }
 
 // DiffSnapshot compares items against the stored snapshot for kind and returns

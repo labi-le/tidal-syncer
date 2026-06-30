@@ -15,8 +15,9 @@ type TidalClient interface {
 	// UserID returns the authenticated user's TIDAL id, refreshing the token as
 	// a side effect so the engine can validate credentials before a run.
 	UserID(ctx context.Context) (string, error)
-	// FavoriteTracks streams the user's favorite tracks one page at a time.
-	FavoriteTracks(ctx context.Context) iter.Seq2[tidal.Track, error]
+	// FavoriteTracks streams the user's favorite tracks one page at a time, each
+	// paired with the timestamp it was added to the user's favorites.
+	FavoriteTracks(ctx context.Context) iter.Seq2[tidal.FavoriteTrack, error]
 	// FavoriteAlbums streams the user's favorite albums one page at a time.
 	FavoriteAlbums(ctx context.Context) iter.Seq2[tidal.Album, error]
 	// FavoritePlaylists streams the user's favorite playlists one page at a time.
@@ -29,6 +30,9 @@ type TidalClient interface {
 	Album(ctx context.Context, id string) (tidal.Album, error)
 	// Lyrics fetches a track's plain and synced lyrics by id.
 	Lyrics(ctx context.Context, id string) (tidal.Lyrics, error)
+	// TrackGenres fetches the genres TIDAL associates with a track by id; the
+	// result is empty when the track has no genre.
+	TrackGenres(ctx context.Context, id string) ([]string, error)
 }
 
 // Downloader fetches a single track's audio to destPath and reports the audio

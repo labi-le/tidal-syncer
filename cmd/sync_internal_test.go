@@ -276,8 +276,14 @@ type mockTidalClient struct {
 
 func (m *mockTidalClient) UserID(context.Context) (string, error) { return m.userID, nil }
 
-func (m *mockTidalClient) FavoriteTracks(context.Context) iter.Seq2[tidal.Track, error] {
-	return seqOfTracks(m.favTracks)
+func (m *mockTidalClient) FavoriteTracks(context.Context) iter.Seq2[tidal.FavoriteTrack, error] {
+	return func(yield func(tidal.FavoriteTrack, error) bool) {
+		for _, track := range m.favTracks {
+			if !yield(tidal.FavoriteTrack{Track: track}, nil) {
+				return
+			}
+		}
+	}
 }
 
 func (m *mockTidalClient) FavoriteAlbums(context.Context) iter.Seq2[tidal.Album, error] {
@@ -313,6 +319,10 @@ func (m *mockTidalClient) Lyrics(context.Context, string) (tidal.Lyrics, error) 
 	return tidal.Lyrics{}, nil
 }
 
+func (m *mockTidalClient) TrackGenres(context.Context, string) ([]string, error) {
+	return nil, nil
+}
+
 // mustAtoi converts a numeric album id string back to int for the album record;
 // the engine always passes a strconv.Itoa-formatted id, so this never fails.
 func mustAtoi(s string) int {
@@ -322,18 +332,6 @@ func mustAtoi(s string) int {
 	}
 
 	return n
-}
-
-// seqOfTracks yields each track with a nil error, matching the lazy iterator the
-// engine consumes.
-func seqOfTracks(tracks []tidal.Track) iter.Seq2[tidal.Track, error] {
-	return func(yield func(tidal.Track, error) bool) {
-		for _, track := range tracks {
-			if !yield(track, nil) {
-				return
-			}
-		}
-	}
 }
 
 // writeSyncConfig writes a minimal valid config pointing data and music at the

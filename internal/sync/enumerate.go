@@ -12,30 +12,33 @@ import (
 )
 
 // enumerate resolves the desired track set for the configured scope, deduplicated
-// by TIDAL track id and returned in a deterministic id order.
-func (e *Engine) enumerate(ctx context.Context) ([]tidal.Track, error) {
+// by TIDAL track id and returned in a deterministic id order. It also returns the
+// favorite-add timestamp per track id for the favorites it enumerated; tracks
+// reached only via favorited albums or playlists have no entry.
+func (e *Engine) enumerate(ctx context.Context) ([]tidal.Track, map[int]string, error) {
 	desired := make(map[int]tidal.Track)
-	if err := e.enumerateInto(ctx, desired); err != nil {
-		return nil, err
+	dates := make(map[int]string)
+	if err := e.enumerateInto(ctx, desired, dates); err != nil {
+		return nil, nil, err
 	}
 
-	return sortedTracks(desired), nil
+	return sortedTracks(desired), dates, nil
 }
 
 // enumerateInto fills dst from either the whole library or the enabled favorite
-// collections, according to the scope.
-func (e *Engine) enumerateInto(ctx context.Context, dst map[int]tidal.Track) error {
+// collections, according to the scope, recording favorite-add dates into dates.
+func (e *Engine) enumerateInto(ctx context.Context, dst map[int]tidal.Track, dates map[int]string) error {
 	if e.config.Scope.All {
-		return e.enumerateAll(ctx, dst)
+		return e.enumerateAll(ctx, dst, dates)
 	}
 
-	return e.enumerateFavorites(ctx, dst)
+	return e.enumerateFavorites(ctx, dst, dates)
 }
 
 // enumerateAll unions favorite tracks with the tracks of every favorited album
 // and playlist.
-func (e *Engine) enumerateAll(ctx context.Context, dst map[int]tidal.Track) error {
-	if err := collectTracks(e.client.FavoriteTracks(ctx), dst); err != nil {
+func (e *Engine) enumerateAll(ctx context.Context, dst map[int]tidal.Track, dates map[int]string) error {
+	if err := collectFavoriteTracks(e.client.FavoriteTracks(ctx), dst, dates); err != nil {
 		return err
 	}
 	if err := e.expandAlbums(ctx, dst); err != nil {
@@ -46,9 +49,9 @@ func (e *Engine) enumerateAll(ctx context.Context, dst map[int]tidal.Track) erro
 }
 
 // enumerateFavorites honors each favorites toggle independently.
-func (e *Engine) enumerateFavorites(ctx context.Context, dst map[int]tidal.Track) error {
+func (e *Engine) enumerateFavorites(ctx context.Context, dst map[int]tidal.Track, dates map[int]string) error {
 	if e.config.Scope.Favorites.Tracks {
-		if err := collectTracks(e.client.FavoriteTracks(ctx), dst); err != nil {
+		if err := collectFavoriteTracks(e.client.FavoriteTracks(ctx), dst, dates); err != nil {
 			return err
 		}
 	}
@@ -102,6 +105,23 @@ func collectTracks(seq iter.Seq2[tidal.Track, error], dst map[int]tidal.Track) e
 			return fmt.Errorf("enumerate tracks: %w", err)
 		}
 		dst[track.ID] = track
+	}
+
+	return nil
+}
+
+// collectFavoriteTracks drains a favorite-track stream into dst keyed by track
+// id, recording each track's favorite-add date into dates, stopping at the first
+// stream error.
+func collectFavoriteTracks(
+	seq iter.Seq2[tidal.FavoriteTrack, error], dst map[int]tidal.Track, dates map[int]string,
+) error {
+	for fav, err := range seq {
+		if err != nil {
+			return fmt.Errorf("enumerate favorite tracks: %w", err)
+		}
+		dst[fav.Track.ID] = fav.Track
+		dates[fav.Track.ID] = fav.AddedAt
 	}
 
 	return nil

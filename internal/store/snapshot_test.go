@@ -79,6 +79,37 @@ func Test_Store_ReplaceSnapshot_overwrites_previous(t *testing.T) {
 	}
 }
 
+func Test_Store_FavoritesByRecency_returns_dated_items_newest_first(t *testing.T) {
+	// Given a tracks snapshot mixing dated favorites with one undated album-expanded track
+	ctx := context.Background()
+	st := newStore(t)
+	const kind = "tracks"
+	items := []store.SnapshotItem{
+		{TidalID: "1", Name: "Oldest", AddedAt: "2026-06-01T00:00:00.000+0000"},
+		{TidalID: "2", Name: "Newest", AddedAt: "2026-06-30T00:00:00.000+0000"},
+		{TidalID: "3", Name: "Middle", AddedAt: "2026-06-15T00:00:00.000+0000"},
+		{TidalID: "4", Name: "Undated"},
+	}
+	if err := st.ReplaceSnapshot(ctx, kind, items); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+
+	// When reading the two most recently added favorites
+	got, err := st.FavoritesByRecency(ctx, kind, 2)
+
+	// Then they return newest-first, the undated track is excluded, and the limit holds
+	if err != nil {
+		t.Fatalf("favorites by recency: %v", err)
+	}
+	want := []store.SnapshotItem{
+		{TidalID: "2", Name: "Newest", AddedAt: "2026-06-30T00:00:00.000+0000"},
+		{TidalID: "3", Name: "Middle", AddedAt: "2026-06-15T00:00:00.000+0000"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("favorites by recency:\n got %+v\nwant %+v", got, want)
+	}
+}
+
 func Test_Store_Snapshot_isolated_by_kind(t *testing.T) {
 	// Given two kinds with overlapping ids
 	ctx := context.Background()

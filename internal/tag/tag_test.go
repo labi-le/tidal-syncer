@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"go.senan.xyz/taglib"
@@ -23,6 +24,7 @@ const (
 	pipelineDiscTag     = "1"
 	pipelineDate        = "2026"
 	pipelineGenre       = "Ambient"
+	pipelineGenreSecond = "Drone"
 	pipelineISRC        = "USS1Z9900001"
 	pipelineCopyright   = "© 2026 Pipeline Records"
 	pipelinePlainLyrics = "first line\nsecond line"
@@ -42,7 +44,7 @@ func pipelineMeta() tag.Meta {
 		TrackNumber: pipelineTrack,
 		DiscNumber:  pipelineDisc,
 		Date:        pipelineDate,
-		Genre:       pipelineGenre,
+		Genre:       []string{pipelineGenre, pipelineGenreSecond},
 		ISRC:        pipelineISRC,
 		Copyright:   pipelineCopyright,
 	}
@@ -60,7 +62,7 @@ func wantCoreTags() map[string][]string {
 		taglib.TrackNumber: {pipelineTrackTag},
 		taglib.DiscNumber:  {pipelineDiscTag},
 		taglib.Date:        {pipelineDate},
-		taglib.Genre:       {pipelineGenre},
+		taglib.Genre:       {pipelineGenre, pipelineGenreSecond},
 		taglib.ISRC:        {pipelineISRC},
 		taglib.Copyright:   {pipelineCopyright},
 	}
@@ -181,5 +183,49 @@ func truncateFile(t *testing.T, path string) {
 	}
 	if err = os.WriteFile(path, data[:len(data)/truncateDivisor], 0o600); err != nil {
 		t.Fatalf("write truncated %s: %v", path, err)
+	}
+}
+
+// TestReadGenreReturnsGenreComments proves ReadGenre returns every GENRE Vorbis
+// comment of a file, in order.
+func TestReadGenreReturnsGenreComments(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := makeCopy(t, dir, "genre.flac")
+	if err := tag.WriteTags(path, map[string][]string{
+		taglib.Genre: {pipelineGenre, pipelineGenreSecond},
+	}); err != nil {
+		t.Fatalf("WriteTags: %v", err)
+	}
+
+	got, err := tag.ReadGenre(path)
+	if err != nil {
+		t.Fatalf("ReadGenre: %v", err)
+	}
+	if want := []string{pipelineGenre, pipelineGenreSecond}; !slices.Equal(want, got) {
+		t.Fatalf("genres = %v, want %v", got, want)
+	}
+}
+
+// TestReadGenreEmptyWhenAbsent proves ReadGenre returns no genres for a file
+// whose comments carry none.
+func TestReadGenreEmptyWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := makeCopy(t, dir, "nogenre.flac")
+	if err := tag.WriteTags(path, map[string][]string{
+		taglib.Title: {pipelineTitle},
+	}); err != nil {
+		t.Fatalf("WriteTags: %v", err)
+	}
+
+	got, err := tag.ReadGenre(path)
+	if err != nil {
+		t.Fatalf("ReadGenre: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("genres = %v, want none", got)
 	}
 }

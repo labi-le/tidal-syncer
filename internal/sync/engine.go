@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/labi-le/tidal-syncer/internal/config"
 	"github.com/labi-le/tidal-syncer/internal/store"
+	"github.com/labi-le/tidal-syncer/internal/tag"
 	"github.com/labi-le/tidal-syncer/pkg/tidal"
 )
 
@@ -91,7 +93,11 @@ func (e *Engine) SyncOnce(ctx context.Context) (Summary, []store.SnapshotItem, e
 		return Summary{}, nil, fmt.Errorf("sync: validate token: %w", err)
 	}
 
-	tracks, err := e.enumerate(ctx)
+	if err := e.backfillGenres(ctx); err != nil {
+		e.logger.Warn().Err(err).Msg("genre backfill incomplete")
+	}
+
+	tracks, dates, err := e.enumerate(ctx)
 	if err != nil {
 		return Summary{}, nil, err
 	}
@@ -104,7 +110,36 @@ func (e *Engine) SyncOnce(ctx context.Context) (Summary, []store.SnapshotItem, e
 	summary := c.snapshot(time.Since(start))
 	summary.emit(e.logger)
 
-	return summary, snapshotItems(tracks), nil
+	return summary, snapshotItems(tracks, dates), nil
+}
+
+// backfillGenres fills the genre column for already-downloaded tracks recorded
+// before the column existed, reading each file's GENRE comments. It is
+// best-effort and self-limiting: a track whose file is missing or carries no
+// genre is left for a later run, and the underlying query returns nothing once
+// every done track is populated, so calling it on every cycle is cheap.
+func (e *Engine) backfillGenres(ctx context.Context) error {
+	gaps, err := e.store.TracksMissingGenre(ctx)
+	if err != nil {
+		return fmt.Errorf("sync: list tracks missing genre: %w", err)
+	}
+	for _, gap := range gaps {
+		genres, readErr := tag.ReadGenre(gap.Path)
+		if readErr != nil {
+			e.logger.Debug().Err(readErr).Str("path", gap.Path).Msg("genre backfill: read tags")
+
+			continue
+		}
+		joined := strings.Join(genres, genreSeparator)
+		if joined == "" {
+			continue
+		}
+		if err = e.store.SetTrackGenre(ctx, gap.TidalID, joined); err != nil {
+			return fmt.Errorf("sync: backfill genre for track %s: %w", gap.TidalID, err)
+		}
+	}
+
+	return nil
 }
 
 // downloadAll processes tracks concurrently, bounded by the configured worker
@@ -135,13 +170,16 @@ func (e *Engine) downloadAll(ctx context.Context, tracks []tidal.Track, c *count
 }
 
 // snapshotItems projects the enumerated tracks into favorites-snapshot items for
-// the caller to diff for removals and persist as the next run's baseline.
-func snapshotItems(tracks []tidal.Track) []store.SnapshotItem {
+// the caller to diff for removals and persist as the next run's baseline. The
+// favorite-add date is carried through for tracks that came from the favorites
+// listing; tracks reached only via albums or playlists carry an empty date.
+func snapshotItems(tracks []tidal.Track, dates map[int]string) []store.SnapshotItem {
 	items := make([]store.SnapshotItem, 0, len(tracks))
 	for _, track := range tracks {
 		items = append(items, store.SnapshotItem{
 			TidalID: strconv.Itoa(track.ID),
 			Name:    track.Title,
+			AddedAt: dates[track.ID],
 		})
 	}
 

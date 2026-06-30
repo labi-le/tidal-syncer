@@ -6,6 +6,7 @@ import "time"
 // package defaults and then mutated by the [Option] values passed to [New].
 type config struct {
 	baseURL           string
+	v2BaseURL         string
 	requestsPerMinute int
 	retryMax          int
 	retryWaitMin      time.Duration
@@ -19,6 +20,12 @@ type Option func(*config)
 // point the client at an httptest server.
 func WithBaseURL(baseURL string) Option {
 	return func(c *config) { c.baseURL = baseURL }
+}
+
+// WithV2BaseURL overrides the openapi v2 base URL used for genre lookups. It is
+// primarily useful in tests to point the client at an httptest server.
+func WithV2BaseURL(baseURL string) Option {
+	return func(c *config) { c.v2BaseURL = baseURL }
 }
 
 // WithRequestsPerMinute sets the client-side rate limit. Values at or below
