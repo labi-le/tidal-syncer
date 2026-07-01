@@ -69,42 +69,61 @@ func (e *Engine) enumerateFavorites(ctx context.Context, dst map[int]tidal.Track
 	return nil
 }
 
-// expandAlbums adds every track of every favorited album into dst.
+// expandAlbums adds every track of every favorited album into dst, serving each
+// album's track list from the immutable expansion cache when possible, and prunes
+// cache entries for albums no longer favorited.
 func (e *Engine) expandAlbums(ctx context.Context, dst map[int]tidal.Track) error {
+	seen := make([]string, 0)
 	for album, iterErr := range e.client.FavoriteAlbums(ctx) {
 		if iterErr != nil {
 			return fmt.Errorf("enumerate favorite albums: %w", iterErr)
 		}
-		if err := collectTracks(e.client.AlbumTracks(ctx, strconv.Itoa(album.ID)), dst); err != nil {
+		id := strconv.Itoa(album.ID)
+		seen = append(seen, id)
+		c := cachedCollection{
+			kind:      collectionKindAlbum,
+			id:        id,
+			version:   "",
+			immutable: true,
+			fetch:     func() iter.Seq2[tidal.Track, error] { return e.client.AlbumTracks(ctx, id) },
+		}
+		if err := e.expandCollection(ctx, dst, c); err != nil {
 			return err
 		}
+	}
+
+	if err := e.store.PruneCollections(ctx, collectionKindAlbum, seen); err != nil {
+		return fmt.Errorf("prune album cache: %w", err)
 	}
 
 	return nil
 }
 
-// expandPlaylists adds every track of every favorited playlist into dst.
+// expandPlaylists adds every track of every favorited playlist into dst, serving
+// each playlist's track list from the cache while it is unchanged (keyed by
+// lastUpdated), and prunes cache entries for playlists no longer favorited.
 func (e *Engine) expandPlaylists(ctx context.Context, dst map[int]tidal.Track) error {
+	seen := make([]string, 0)
 	for playlist, iterErr := range e.client.FavoritePlaylists(ctx) {
 		if iterErr != nil {
 			return fmt.Errorf("enumerate favorite playlists: %w", iterErr)
 		}
-		if err := collectTracks(e.client.PlaylistTracks(ctx, playlist.UUID), dst); err != nil {
+		uuid := playlist.UUID
+		seen = append(seen, uuid)
+		c := cachedCollection{
+			kind:      collectionKindPlaylist,
+			id:        uuid,
+			version:   playlist.LastUpdated,
+			immutable: false,
+			fetch:     func() iter.Seq2[tidal.Track, error] { return e.client.PlaylistTracks(ctx, uuid) },
+		}
+		if err := e.expandCollection(ctx, dst, c); err != nil {
 			return err
 		}
 	}
 
-	return nil
-}
-
-// collectTracks drains a track stream into dst keyed by track id, stopping at
-// the first stream error.
-func collectTracks(seq iter.Seq2[tidal.Track, error], dst map[int]tidal.Track) error {
-	for track, err := range seq {
-		if err != nil {
-			return fmt.Errorf("enumerate tracks: %w", err)
-		}
-		dst[track.ID] = track
+	if err := e.store.PruneCollections(ctx, collectionKindPlaylist, seen); err != nil {
+		return fmt.Errorf("prune playlist cache: %w", err)
 	}
 
 	return nil

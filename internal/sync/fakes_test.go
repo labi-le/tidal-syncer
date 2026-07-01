@@ -46,6 +46,9 @@ type fakeClient struct {
 	albums         map[string]tidal.Album
 	lyrics         map[string]tidal.Lyrics
 	genres         map[string][]string
+
+	albumTrackCalls    sync.Map
+	playlistTrackCalls sync.Map
 }
 
 func (f *fakeClient) UserID(_ context.Context) (string, error) {
@@ -71,11 +74,25 @@ func (f *fakeClient) FavoritePlaylists(_ context.Context) iter.Seq2[tidal.Playli
 }
 
 func (f *fakeClient) AlbumTracks(_ context.Context, albumID string) iter.Seq2[tidal.Track, error] {
+	recordCall(&f.albumTrackCalls, albumID)
+
 	return seqOf(f.albumTracks[albumID])
 }
 
 func (f *fakeClient) PlaylistTracks(_ context.Context, playlistUUID string) iter.Seq2[tidal.Track, error] {
+	recordCall(&f.playlistTrackCalls, playlistUUID)
+
 	return seqOf(f.playlistTracks[playlistUUID])
+}
+
+// countAlbumTracks reports how many times AlbumTracks was fetched for an album id.
+func (f *fakeClient) countAlbumTracks(albumID string) int {
+	return callCount(&f.albumTrackCalls, albumID)
+}
+
+// countPlaylistTracks reports how many times PlaylistTracks was fetched for a uuid.
+func (f *fakeClient) countPlaylistTracks(playlistUUID string) int {
+	return callCount(&f.playlistTrackCalls, playlistUUID)
 }
 
 func (f *fakeClient) Album(_ context.Context, id string) (tidal.Album, error) {

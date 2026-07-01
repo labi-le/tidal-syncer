@@ -103,6 +103,10 @@ type Playlist struct {
 	NumberOfTracks int `json:"numberOfTracks"`
 	// Duration is the total playlist length in seconds.
 	Duration int `json:"duration"`
+	// LastUpdated is the ISO-8601 instant the playlist content last changed
+	// (track added, removed, reordered, or metadata edited). It advances on every
+	// content mutation, so it is the cache-invalidation key for playlist expansion.
+	LastUpdated string `json:"lastUpdated"`
 }
 
 // Contributor is a single credited person within an album [Credit] role.
