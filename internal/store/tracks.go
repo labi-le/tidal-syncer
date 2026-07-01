@@ -27,6 +27,7 @@ type Track struct {
 	RequestedQuality string
 	Genre            string
 	Status           Status
+	Permanent        bool
 	UpdatedAt        int64
 }
 
@@ -34,8 +35,8 @@ type Track struct {
 // updated_at with the current database time.
 func (s *Store) MarkTrack(ctx context.Context, tr Track) error {
 	const q = `INSERT INTO tracks
-		(tidal_id, isrc, album_id, path, obtained_quality, requested_quality, genre, status, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
+		(tidal_id, isrc, album_id, path, obtained_quality, requested_quality, genre, status, permanent, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())
 		ON CONFLICT(tidal_id) DO UPDATE SET
 			isrc              = excluded.isrc,
 			album_id          = excluded.album_id,
@@ -44,10 +45,11 @@ func (s *Store) MarkTrack(ctx context.Context, tr Track) error {
 			requested_quality = excluded.requested_quality,
 			genre             = excluded.genre,
 			status            = excluded.status,
+			permanent         = excluded.permanent,
 			updated_at        = excluded.updated_at`
 	if _, err := s.db.ExecContext(ctx, q,
 		tr.TidalID, tr.ISRC, tr.AlbumID, tr.Path,
-		tr.ObtainedQuality, tr.RequestedQuality, tr.Genre, string(tr.Status),
+		tr.ObtainedQuality, tr.RequestedQuality, tr.Genre, string(tr.Status), tr.Permanent,
 	); err != nil {
 		return fmt.Errorf("mark track %q: %w", tr.TidalID, err)
 	}
@@ -58,7 +60,7 @@ func (s *Store) MarkTrack(ctx context.Context, tr Track) error {
 // GetTrack returns the cached state for the track with the given TIDAL id, or
 // ErrNotFound if it is absent.
 func (s *Store) GetTrack(ctx context.Context, tidalID string) (Track, error) {
-	const q = `SELECT tidal_id, isrc, album_id, path, obtained_quality, requested_quality, genre, status, updated_at
+	const q = `SELECT tidal_id, isrc, album_id, path, obtained_quality, requested_quality, genre, status, permanent, updated_at
 		FROM tracks WHERE tidal_id = ?`
 	var (
 		tr     Track
@@ -66,7 +68,7 @@ func (s *Store) GetTrack(ctx context.Context, tidalID string) (Track, error) {
 	)
 	err := s.db.QueryRowContext(ctx, q, tidalID).Scan(
 		&tr.TidalID, &tr.ISRC, &tr.AlbumID, &tr.Path,
-		&tr.ObtainedQuality, &tr.RequestedQuality, &tr.Genre, &status, &tr.UpdatedAt,
+		&tr.ObtainedQuality, &tr.RequestedQuality, &tr.Genre, &status, &tr.Permanent, &tr.UpdatedAt,
 	)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):

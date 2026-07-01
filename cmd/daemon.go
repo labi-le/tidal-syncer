@@ -33,7 +33,7 @@ func newDaemonCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.
 			}
 
 			cycle := func(ctx context.Context) error {
-				return runSync(ctx, *configPath, *verbose, logger)
+				return runSync(ctx, *configPath, *verbose, logger, false)
 			}
 
 			return runDaemon(cmd.Context(), &logger, cfg.Daemon, cycle)

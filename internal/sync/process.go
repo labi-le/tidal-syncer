@@ -63,7 +63,8 @@ func (e *Engine) processTrack(ctx context.Context, track tidal.Track, c *counter
 // compares the requested tier, not the obtained one, so a track whose best
 // available master is below the requested tier is downloaded once and then
 // skipped rather than re-downloaded every cycle; raising the requested tier
-// re-attempts it. A missing record is not a skip.
+// re-attempts it. A previously failed track is skipped only when the failure is
+// permanent (see skipPermanentFailure). A missing record is not a skip.
 func (e *Engine) shouldSkip(ctx context.Context, track tidal.Track) (bool, error) {
 	record, err := e.store.GetTrack(ctx, strconv.Itoa(track.ID))
 	if errors.Is(err, store.ErrNotFound) {
@@ -72,11 +73,30 @@ func (e *Engine) shouldSkip(ctx context.Context, track tidal.Track) (bool, error
 	if err != nil {
 		return false, fmt.Errorf("look up track %d: %w", track.ID, err)
 	}
+	if record.Status == store.StatusFailed {
+		return e.skipPermanentFailure(record), nil
+	}
 	if record.Status != store.StatusDone {
 		return false, nil
 	}
 
 	return tidal.Quality(record.RequestedQuality).Rank() >= e.config.Quality.Request.Rank(), nil
+}
+
+// skipPermanentFailure reports whether a previously failed track should be
+// skipped rather than re-attempted. A permanent failure recorded at a tier at
+// least as high as the one now requested is skipped; raising the requested tier
+// or running with --retry-failed forces a re-attempt, and a transient failure is
+// always retried.
+func (e *Engine) skipPermanentFailure(record store.Track) bool {
+	if e.retryFailed {
+		return false
+	}
+	if !record.Permanent {
+		return false
+	}
+
+	return tidal.Quality(record.RequestedQuality).Rank() >= e.config.Quality.Request.Rank()
 }
 
 // downloadOne resolves metadata, downloads, integrity-checks, tags and records a
@@ -250,17 +270,20 @@ func (e *Engine) markDone(
 func (e *Engine) markFailed(
 	ctx context.Context, log zerolog.Logger, track tidal.Track, cause error, c *counters,
 ) {
+	permanent := permanentFailure(cause)
 	c.failed.Add(1)
-	log.Error().Err(cause).Int("track", track.ID).Msg("track failed")
+	log.Error().Err(cause).Int("track", track.ID).Bool("permanent", permanent).Msg("track failed")
 
 	record := store.Track{
-		TidalID:         strconv.Itoa(track.ID),
-		ISRC:            track.ISRC,
-		AlbumID:         strconv.Itoa(track.Album.ID),
-		Path:            "",
-		ObtainedQuality: "",
-		Status:          store.StatusFailed,
-		UpdatedAt:       0,
+		TidalID:          strconv.Itoa(track.ID),
+		ISRC:             track.ISRC,
+		AlbumID:          strconv.Itoa(track.Album.ID),
+		Path:             "",
+		ObtainedQuality:  "",
+		RequestedQuality: string(e.config.Quality.Request),
+		Status:           store.StatusFailed,
+		Permanent:        permanent,
+		UpdatedAt:        0,
 	}
 	if err := e.store.MarkTrack(ctx, record); err != nil {
 		log.Error().Err(err).Int("track", track.ID).Msg("record failed state")

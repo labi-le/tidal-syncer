@@ -25,7 +25,7 @@ DOCKER_IMAGE ?= tidal-syncer:local
 export PUID ?= $(shell id -u)
 export PGID ?= $(shell id -g)
 
-.phony: run build clean tests test-race lint docker-build docker-run up down ps logs login
+.phony: run build clean tests test-race lint docker-build docker-run up down ps logs login sync retry-failed health
 
 run:
 	go run $(MAIN_PATH)
@@ -65,3 +65,12 @@ logs:
 
 login:
 	docker compose run --rm tidal-syncer login
+
+sync:
+	docker compose run --rm tidal-syncer sync
+
+retry-failed:
+	docker compose run --rm tidal-syncer sync --retry-failed
+
+health:
+	docker compose run --rm tidal-syncer health

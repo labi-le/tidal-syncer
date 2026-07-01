@@ -25,6 +25,9 @@ import (
 const (
 	// onceFlag names the --once flag that selects the single-cycle run mode.
 	onceFlag = "once"
+	// retryFailedFlag names the --retry-failed flag that forces one re-attempt of
+	// tracks previously recorded as permanently failed.
+	retryFailedFlag = "retry-failed"
 	// lockFileName is the file, under the data directory, whose flock serializes
 	// sync runs across processes.
 	lockFileName = "lock"
@@ -67,10 +70,16 @@ func newSyncCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.Co
 				return errOnceOnly
 			}
 
-			return runSync(cmd.Context(), *configPath, *verbose, *lg)
+			retryFailed, err := cmd.Flags().GetBool(retryFailedFlag)
+			if err != nil {
+				return fmt.Errorf("sync: read --%s flag: %w", retryFailedFlag, err)
+			}
+
+			return runSync(cmd.Context(), *configPath, *verbose, *lg, retryFailed)
 		},
 	}
 	cmd.Flags().Bool(onceFlag, true, "run a single sync cycle and exit")
+	cmd.Flags().Bool(retryFailedFlag, false, "re-attempt tracks previously marked as permanently failed")
 
 	return cmd
 }
@@ -80,7 +89,7 @@ func newSyncCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.Co
 // is reported as a friendly, non-fatal condition: the run exits non-zero without
 // touching the network. The lock is held for the whole cycle and released on
 // return.
-func runSync(ctx context.Context, configPath string, verbose bool, logger zerolog.Logger) error {
+func runSync(ctx context.Context, configPath string, verbose bool, logger zerolog.Logger, retryFailed bool) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("sync: %w", err)
@@ -119,26 +128,27 @@ func runSync(ctx context.Context, configPath string, verbose bool, logger zerolo
 	}
 	logger.Info().Int("swept", swept).Str("music", cfg.Paths.Music).Msg("swept stale .part files")
 
-	return executeSync(ctx, cfg, st, logger)
+	return executeSync(ctx, cfg, st, logger, retryFailed)
 }
 
 // executeSync wires the TIDAL client, download engine and playlist exporter, runs
 // one sync cycle, exports playlists and the favorite-track playlist when in
 // scope, and logs the resulting summary. It runs with the data-directory lock
 // held.
-func executeSync(ctx context.Context, cfg config.Config, st *store.Store, logger zerolog.Logger) error {
+func executeSync(ctx context.Context, cfg config.Config, st *store.Store, logger zerolog.Logger, retryFailed bool) error {
 	authClient := auth.New(cfg.TidalAuth.ClientID, cfg.TidalAuth.ClientSecret, authstore.New(st))
 	tidalClient := tidal.New(auth.NewTokenSource(authClient))
 	httpClient := newSyncHTTPClient()
 
 	engine := synceng.NewEngine(synceng.Params{
-		Client:     tidalClient,
-		Downloader: synceng.NewDownloader(synceng.NewPlaybackProvider(tidalClient), httpClient),
-		Covers:     synceng.NewCoverFetcher(httpClient),
-		Store:      st,
-		Config:     cfg,
-		Logger:     logger,
-		Limiter:    nil,
+		Client:      tidalClient,
+		Downloader:  synceng.NewDownloader(synceng.NewPlaybackProvider(tidalClient), httpClient),
+		Covers:      synceng.NewCoverFetcher(httpClient),
+		Store:       st,
+		Config:      cfg,
+		Logger:      logger,
+		Limiter:     nil,
+		RetryFailed: retryFailed,
 	})
 
 	summary, current, err := engine.SyncOnce(ctx)

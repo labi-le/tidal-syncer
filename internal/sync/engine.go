@@ -38,25 +38,27 @@ const (
 
 // Params bundles the engine's injected dependencies and configuration.
 type Params struct {
-	Client     TidalClient
-	Downloader Downloader
-	Covers     CoverFetcher
-	Store      *store.Store
-	Config     config.Config
-	Logger     zerolog.Logger
-	Limiter    *rate.Limiter
+	Client      TidalClient
+	Downloader  Downloader
+	Covers      CoverFetcher
+	Store       *store.Store
+	Config      config.Config
+	Logger      zerolog.Logger
+	Limiter     *rate.Limiter
+	RetryFailed bool
 }
 
 // Engine orchestrates one or more synchronization runs over its injected ports.
 type Engine struct {
-	client     TidalClient
-	downloader Downloader
-	covers     CoverFetcher
-	store      *store.Store
-	config     config.Config
-	logger     zerolog.Logger
-	limiter    *rate.Limiter
-	albums     *albumCache
+	client      TidalClient
+	downloader  Downloader
+	covers      CoverFetcher
+	store       *store.Store
+	config      config.Config
+	logger      zerolog.Logger
+	limiter     *rate.Limiter
+	albums      *albumCache
+	retryFailed bool
 }
 
 // NewEngine builds an Engine from p, defaulting the rate limiter to an unlimited
@@ -68,14 +70,15 @@ func NewEngine(p Params) *Engine {
 	}
 
 	return &Engine{
-		client:     p.Client,
-		downloader: p.Downloader,
-		covers:     p.Covers,
-		store:      p.Store,
-		config:     p.Config,
-		logger:     p.Logger.With().Str("component", componentField).Logger(),
-		limiter:    limiter,
-		albums:     newAlbumCache(),
+		client:      p.Client,
+		downloader:  p.Downloader,
+		covers:      p.Covers,
+		store:       p.Store,
+		config:      p.Config,
+		logger:      p.Logger.With().Str("component", componentField).Logger(),
+		limiter:     limiter,
+		albums:      newAlbumCache(),
+		retryFailed: p.RetryFailed,
 	}
 }
 

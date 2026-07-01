@@ -65,7 +65,7 @@ func Test_runSync_reports_friendly_error_when_lock_held(t *testing.T) {
 	defer func() { _ = release() }()
 
 	// When a one-shot sync runs against the same data directory
-	err := runSync(ctx, configPath, false, zerolog.Nop())
+	err := runSync(ctx, configPath, false, zerolog.Nop(), false)
 
 	// Then it returns the friendly "already running" sentinel
 	if !errors.Is(err, errAnotherSyncRunning) {

@@ -88,3 +88,63 @@ func Test_Store_SetTrackGenre_updates_only_the_genre(t *testing.T) {
 		t.Fatalf("genre = %q, want %q", got.Genre, "Jazz;Fusion")
 	}
 }
+
+func Test_Store_MarkTrack_round_trips_permanent_flag(t *testing.T) {
+	// Given a track marked as a permanent failure.
+	ctx := context.Background()
+	st := newStore(t)
+	want := store.Track{
+		TidalID:          "42",
+		ISRC:             "US1234567890",
+		AlbumID:          "7",
+		RequestedQuality: "HI_RES_LOSSLESS",
+		Status:           store.StatusFailed,
+		Permanent:        true,
+	}
+	if err := st.MarkTrack(ctx, want); err != nil {
+		t.Fatalf("mark track: %v", err)
+	}
+
+	// When it is read back.
+	got, err := st.GetTrack(ctx, want.TidalID)
+	if err != nil {
+		t.Fatalf("get track: %v", err)
+	}
+
+	// Then the permanent flag and requested tier survive the round trip.
+	if !got.Permanent {
+		t.Errorf("permanent = false, want true (got %+v)", got)
+	}
+	if got.Status != store.StatusFailed {
+		t.Errorf("status = %q, want %q", got.Status, store.StatusFailed)
+	}
+	if got.RequestedQuality != want.RequestedQuality {
+		t.Errorf("requested_quality = %q, want %q", got.RequestedQuality, want.RequestedQuality)
+	}
+}
+
+func Test_Store_MarkTrack_defaults_permanent_to_false(t *testing.T) {
+	// Given a done track marked without setting Permanent.
+	ctx := context.Background()
+	st := newStore(t)
+	if err := st.MarkTrack(ctx, store.Track{
+		TidalID:          "43",
+		Path:             "/music/Artist/Album/01 - Song.flac",
+		ObtainedQuality:  "LOSSLESS",
+		RequestedQuality: "LOSSLESS",
+		Status:           store.StatusDone,
+	}); err != nil {
+		t.Fatalf("mark track: %v", err)
+	}
+
+	// When it is read back.
+	got, err := st.GetTrack(ctx, "43")
+	if err != nil {
+		t.Fatalf("get track: %v", err)
+	}
+
+	// Then permanent defaults to false.
+	if got.Permanent {
+		t.Errorf("permanent = true, want false (got %+v)", got)
+	}
+}
