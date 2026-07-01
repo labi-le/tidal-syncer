@@ -66,6 +66,46 @@ func (s *Store) FavoritesByRecency(ctx context.Context, kind string, limit int) 
 	return items, nil
 }
 
+// FavoriteFile is a favorited track resolved to its downloaded file, carrying the
+// favorite-add date so callers can order the local mirror by when each track was
+// favorited on TIDAL.
+type FavoriteFile struct {
+	Title   string
+	Path    string
+	AddedAt string
+}
+
+// OrderedFavoriteFiles returns every favorite-kind track that carries a
+// favorite-add date and a completed download on disk, most recently favorited
+// first. Tracks reached only via a favorited album or playlist (no add date) and
+// tracks without a finished download (no file) are excluded, so every returned
+// path points at a real file.
+func (s *Store) OrderedFavoriteFiles(ctx context.Context, kind string) ([]FavoriteFile, error) {
+	const q = `SELECT f.name, t.path, f.added_at ` +
+		`FROM favorites_snapshot f JOIN tracks t ON t.tidal_id = f.tidal_id ` +
+		`WHERE f.kind = ? AND f.added_at <> '' AND t.status = 'done' AND t.path <> '' ` +
+		`ORDER BY f.added_at DESC`
+	rows, err := s.db.QueryContext(ctx, q, kind)
+	if err != nil {
+		return nil, fmt.Errorf("query ordered favorite files %q: %w", kind, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var files []FavoriteFile
+	for rows.Next() {
+		var file FavoriteFile
+		if err = rows.Scan(&file.Title, &file.Path, &file.AddedAt); err != nil {
+			return nil, fmt.Errorf("scan favorite file: %w", err)
+		}
+		files = append(files, file)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate ordered favorite files %q: %w", kind, err)
+	}
+
+	return files, nil
+}
+
 // DiffSnapshot compares items against the stored snapshot for kind and returns
 // the tidal ids newly added (present in items, absent from the store) and those
 // removed (present in the store, absent from items), each sorted ascending.

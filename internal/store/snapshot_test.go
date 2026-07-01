@@ -110,6 +110,53 @@ func Test_Store_FavoritesByRecency_returns_dated_items_newest_first(t *testing.T
 	}
 }
 
+func Test_Store_OrderedFavoriteFiles_returns_downloaded_favorites_newest_first(t *testing.T) {
+	// Given a tracks snapshot mixing dated favorites (some downloaded), one undated
+	// album-expanded track (id 4), and one dated favorite whose download never
+	// completed so it has no track row / file (id 5).
+	ctx := context.Background()
+	st := newStore(t)
+	const kind = "tracks"
+	items := []store.SnapshotItem{
+		{TidalID: "1", Name: "Oldest", AddedAt: "2026-06-01T00:00:00.000+0000"},
+		{TidalID: "2", Name: "Newest", AddedAt: "2026-06-30T00:00:00.000+0000"},
+		{TidalID: "3", Name: "Middle", AddedAt: "2026-06-15T00:00:00.000+0000"},
+		{TidalID: "4", Name: "Undated"},
+		{TidalID: "5", Name: "NoFile", AddedAt: "2026-06-20T00:00:00.000+0000"},
+	}
+	if err := st.ReplaceSnapshot(ctx, kind, items); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	for _, tr := range []store.Track{
+		{TidalID: "1", Path: "/music/Artist/Album/01 - Oldest.flac", ObtainedQuality: "LOSSLESS", RequestedQuality: "LOSSLESS", Status: store.StatusDone},
+		{TidalID: "2", Path: "/music/Artist/Album/02 - Newest.flac", ObtainedQuality: "LOSSLESS", RequestedQuality: "LOSSLESS", Status: store.StatusDone},
+		{TidalID: "3", Path: "/music/Artist/Album/03 - Middle.flac", ObtainedQuality: "LOSSLESS", RequestedQuality: "LOSSLESS", Status: store.StatusDone},
+		{TidalID: "4", Path: "/music/Artist/Album/04 - Undated.flac", ObtainedQuality: "LOSSLESS", RequestedQuality: "LOSSLESS", Status: store.StatusDone},
+	} {
+		if err := st.MarkTrack(ctx, tr); err != nil {
+			t.Fatalf("mark track %s: %v", tr.TidalID, err)
+		}
+	}
+
+	// When reading the favorite files in favorite-add order
+	got, err := st.OrderedFavoriteFiles(ctx, kind)
+
+	// Then downloaded dated favorites return newest-first; the undated track (id 4,
+	// excluded by the date filter) and the dated-but-undownloaded favorite (id 5,
+	// excluded by the join because it has no file) are both omitted.
+	if err != nil {
+		t.Fatalf("ordered favorite files: %v", err)
+	}
+	want := []store.FavoriteFile{
+		{Title: "Newest", Path: "/music/Artist/Album/02 - Newest.flac", AddedAt: "2026-06-30T00:00:00.000+0000"},
+		{Title: "Middle", Path: "/music/Artist/Album/03 - Middle.flac", AddedAt: "2026-06-15T00:00:00.000+0000"},
+		{Title: "Oldest", Path: "/music/Artist/Album/01 - Oldest.flac", AddedAt: "2026-06-01T00:00:00.000+0000"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ordered favorite files:\n got %+v\nwant %+v", got, want)
+	}
+}
+
 func Test_Store_Snapshot_isolated_by_kind(t *testing.T) {
 	// Given two kinds with overlapping ids
 	ctx := context.Background()

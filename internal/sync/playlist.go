@@ -194,7 +194,12 @@ func writeM3U8(dest string, entries []playlistEntry) error {
 }
 
 // extinfLine renders entry's #EXTINF directive in the extended-M3U form
-// "#EXTINF:<seconds>,<artist> - <title>".
+// "#EXTINF:<seconds>,<artist> - <title>", or "#EXTINF:<seconds>,<title>" when the
+// entry carries no artist (favorite-track exports list the title only).
 func extinfLine(entry playlistEntry) string {
+	if entry.artist == "" {
+		return fmt.Sprintf("#EXTINF:%d,%s", entry.durationSeconds, entry.title)
+	}
+
 	return fmt.Sprintf("#EXTINF:%d,%s - %s", entry.durationSeconds, entry.artist, entry.title)
 }

@@ -19,7 +19,7 @@ LDFLAGS=-ldflags="-X '${FULL_PACKAGE}/internal/buildinfo.Version=${VERSION}' \
                   -s -w \
                   -extldflags '-static'"
 
-DOCKER_IMAGE ?= tidal-syncer:dev
+DOCKER_IMAGE ?= tidal-syncer:local
 
 # Run compose containers as the host user so ./Music and ./data are owned by you (not 65532).
 export PUID ?= $(shell id -u)
@@ -46,7 +46,7 @@ lint:
 	golangci-lint run
 
 docker-build:
-	docker build -t $(DOCKER_IMAGE) .
+	docker compose build
 
 docker-run:
 	docker run --rm -it $(DOCKER_IMAGE)

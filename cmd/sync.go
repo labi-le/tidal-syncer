@@ -123,8 +123,9 @@ func runSync(ctx context.Context, configPath string, verbose bool, logger zerolo
 }
 
 // executeSync wires the TIDAL client, download engine and playlist exporter, runs
-// one sync cycle, exports playlists when in scope, and logs the resulting
-// summary. It runs with the data-directory lock held.
+// one sync cycle, exports playlists and the favorite-track playlist when in
+// scope, and logs the resulting summary. It runs with the data-directory lock
+// held.
 func executeSync(ctx context.Context, cfg config.Config, st *store.Store, logger zerolog.Logger) error {
 	authClient := auth.New(cfg.TidalAuth.ClientID, cfg.TidalAuth.ClientSecret, authstore.New(st))
 	tidalClient := tidal.New(auth.NewTokenSource(authClient))
@@ -158,6 +159,10 @@ func executeSync(ctx context.Context, cfg config.Config, st *store.Store, logger
 		return err
 	}
 
+	if err = exportFavorites(ctx, cfg, st, logger); err != nil {
+		return err
+	}
+
 	logger.Info().
 		Int("downloaded", summary.Downloaded).
 		Int("skipped", summary.Skipped).
@@ -180,6 +185,23 @@ func exportPlaylists(ctx context.Context, cfg config.Config, client *tidal.Clien
 
 	if err := synceng.NewPlaylistWriter(client, cfg, logger).WritePlaylists(ctx); err != nil {
 		return fmt.Errorf("sync: export playlists: %w", err)
+	}
+
+	return nil
+}
+
+// exportFavorites writes the favorite-track collection as a single .m3u8 in
+// favorite-add order when the configured scope includes favorite tracks;
+// otherwise it is a no-op. It reads paths from the store and issues no API calls.
+func exportFavorites(ctx context.Context, cfg config.Config, st *store.Store, logger zerolog.Logger) error {
+	if !cfg.Scope.All && !cfg.Scope.Favorites.Tracks {
+		logger.Debug().Msg("favorites export skipped: favorite tracks not in scope")
+
+		return nil
+	}
+
+	if err := synceng.NewFavoritesWriter(st, cfg, logger).WriteFavorites(ctx); err != nil {
+		return fmt.Errorf("sync: export favorites playlist: %w", err)
 	}
 
 	return nil
