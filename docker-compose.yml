@@ -39,7 +39,7 @@ services:
     #   PUID=$(id -u) PGID=$(id -g) docker compose run --rm tidal-syncer sync
     command: ["daemon"]
     user: "${PUID:-65532}:${PGID:-65532}"
-    restart: unless-stopped
+    restart: always
     # Headroom over the in-process <5s graceful-shutdown budget; the container is
     # SIGKILLed only if the binary does not exit cleanly within 30s of SIGTERM.
     stop_grace_period: 30s
@@ -47,8 +47,9 @@ services:
       # Already set as ENV in the Dockerfile; restated here so operators can see
       # (and override) the bundled-ffmpeg path without reading the image.
       TIDAL_FFMPEG: /usr/local/bin/ffmpeg
-      # Example overrides (uncomment as needed):
-      # TZ: Europe/Berlin
+      # Container-local timezone so daemon.time_window in config.yaml is read in
+      # Moscow time (the distroless static image ships tzdata/zoneinfo).
+      TZ: Europe/Moscow
     volumes:
       - ./Music:/app/Music
       # IMPORTANT: create config.yaml from config.example.yaml BEFORE first run,
