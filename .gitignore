@@ -55,6 +55,9 @@ context.md
 /Music/
 /data/
 
+# Per-machine Docker Compose override; keep the tracked .example template.
+/docker-compose.override.yml
+
 # Operator secrets — .env holds real TIDAL credentials.
 # Never commit any .env*, but keep the tracked .env.example placeholder.
 .env

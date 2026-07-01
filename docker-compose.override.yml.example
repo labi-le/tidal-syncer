@@ -1,0 +1,31 @@
+# tidal-syncer — per-machine Docker Compose override (git-ignored).
+#
+# `docker compose` automatically merges this file on top of docker-compose.yml.
+# The Makefile and bare `docker compose ...` both auto-load it (no -f needed),
+# so use it to change machine-specific settings WITHOUT touching the tracked
+# docker-compose.yml.
+#
+# Copy this file to docker-compose.override.yml and uncomment what you need:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#
+# docker-compose.override.yml is git-ignored; this .example is the tracked
+# template. Inspect the merged result at any time with:
+#   docker compose config
+
+services:
+  tidal-syncer:
+    # --- Relocate host mount paths on this machine ---------------------------
+    # Volumes merge by CONTAINER path (the right, ":/app/..." side). To move a
+    # mount, repeat the SAME container path and change only the host (left) side.
+    # volumes:
+    #   - /mnt/media/tidal:/app/Music                       # FLAC library
+    #   - /etc/tidal-syncer/config.yaml:/app/config.yaml:ro # config file
+    #   - /var/lib/tidal-syncer:/app/data                   # SQLite cache + lock
+
+    # --- Override environment (e.g. a different timezone) --------------------
+    # environment:
+    #   TZ: America/New_York
+
+    # --- Cap resources on a shared host -------------------------------------
+    # mem_limit: 512m
+    # cpus: "1.0"
