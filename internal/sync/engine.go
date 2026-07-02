@@ -19,6 +19,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/labi-le/tidal-syncer/internal/config"
+	"github.com/labi-le/tidal-syncer/internal/namer"
 	"github.com/labi-le/tidal-syncer/internal/store"
 	"github.com/labi-le/tidal-syncer/internal/tag"
 	"github.com/labi-le/tidal-syncer/pkg/tidal"
@@ -55,6 +56,7 @@ type Engine struct {
 	covers      CoverFetcher
 	store       *store.Store
 	config      config.Config
+	template    *namer.Template
 	logger      zerolog.Logger
 	limiter     *rate.Limiter
 	albums      *albumCache
@@ -75,6 +77,7 @@ func NewEngine(p Params) *Engine {
 		covers:      p.Covers,
 		store:       p.Store,
 		config:      p.Config,
+		template:    namer.Compile(p.Config.PathTemplate),
 		logger:      p.Logger.With().Str("component", componentField).Logger(),
 		limiter:     limiter,
 		albums:      newAlbumCache(),

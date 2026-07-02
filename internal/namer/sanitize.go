@@ -16,6 +16,10 @@ const (
 	maxComponentBytes = 255
 	// maxComLPTIndex is the highest COMn / LPTn device index Windows reserves.
 	maxComLPTIndex = 9
+	// maxReservedLen is the byte length of the longest reserved device name
+	// (COMn / LPTn); a longer stem cannot be reserved, so the upper-case lookup
+	// is skipped for it.
+	maxReservedLen = 4
 	// replacement substitutes any character illegal in a path component.
 	replacement = '_'
 	// placeholder is returned when sanitization would otherwise yield "".
@@ -63,6 +67,9 @@ func sanitizeRune(r rune) rune {
 // first dot) is a Windows reserved device name, preserving any extension.
 func suffixIfReserved(name string) string {
 	stem, _, _ := strings.Cut(name, ".")
+	if len(stem) == 0 || len(stem) > maxReservedLen {
+		return name
+	}
 	if _, reserved := reservedNames[strings.ToUpper(stem)]; reserved {
 		return stem + reservedSuffix + name[len(stem):]
 	}

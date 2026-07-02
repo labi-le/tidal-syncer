@@ -12,7 +12,6 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/labi-le/tidal-syncer/internal/ctxlog"
-	"github.com/labi-le/tidal-syncer/internal/namer"
 	"github.com/labi-le/tidal-syncer/internal/store"
 	"github.com/labi-le/tidal-syncer/internal/tag"
 	"github.com/labi-le/tidal-syncer/pkg/tidal"
@@ -109,7 +108,7 @@ func (e *Engine) downloadOne(ctx context.Context, log zerolog.Logger, track tida
 	lyrics := e.fetchLyrics(ctx, log, track)
 	genres := e.fetchGenres(ctx, log, track)
 
-	rel, err := namer.Render(e.config.PathTemplate, buildTrackMeta(track, album))
+	rel, err := e.template.Render(buildTrackMeta(track, album))
 	if err != nil {
 		return fmt.Errorf("render path for track %d: %w", track.ID, err)
 	}

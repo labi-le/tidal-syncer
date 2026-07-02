@@ -55,7 +55,7 @@ func eqStr(a, b []string) bool {
 
 // makeJPEG renders a tiny valid JPEG cover entirely in memory so the only
 // committed binary fixture is the FLAC file.
-func makeJPEG(t *testing.T) []byte {
+func makeJPEG(t testing.TB) []byte {
 	t.Helper()
 
 	img := image.NewRGBA(image.Rect(0, 0, coverDim, coverDim))
@@ -71,7 +71,7 @@ func makeJPEG(t *testing.T) []byte {
 
 // makeCopy duplicates the committed FLAC fixture into dir under name and returns
 // the new path, so each test mutates its own throwaway file.
-func makeCopy(t *testing.T, dir, name string) string {
+func makeCopy(t testing.TB, dir, name string) string {
 	t.Helper()
 
 	src, err := os.ReadFile(fixtureFLAC)

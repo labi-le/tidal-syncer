@@ -149,12 +149,29 @@ EOF
     echo
     echo "Done. Review with: git diff"
   '';
+
+  # benchstat (golang.org/x/perf/cmd/benchstat) is not packaged in the pinned
+  # nixpkgs, so build it from source. Used to compare `go test -bench` runs.
+  benchstat = pkgs.buildGoModule {
+    pname = "benchstat";
+    version = "0-unstable-2026-06-15";
+    src = pkgs.fetchFromGitHub {
+      owner = "golang";
+      repo = "perf";
+      rev = "9e4b9ddef5b6a4371594ec978cb4b8088bec845d";
+      hash = "sha256-q03UUW5fJPLd6UicH+q2KEC9sx3Ph64ebzi4sxW4+rg=";
+    };
+    vendorHash = "sha256-qGQpf0T1qBcu+25VF2xnbvImj+Fs81Ru9tho/0RJwzo=";
+    subPackages = [ "cmd/benchstat" ];
+    doCheck = false;
+  };
 in
 pkgs.mkShell {
   packages = with pkgs; [
     go_1_26
     goreleaser
     golangci-lint
+    benchstat
     ffmpeg
     yq-go
     jq

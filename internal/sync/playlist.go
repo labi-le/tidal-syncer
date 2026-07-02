@@ -37,10 +37,11 @@ const (
 // entries are paths, relative to the Playlists directory, of the exact audio
 // files the engine writes for the playlist's tracks.
 type PlaylistWriter struct {
-	client TidalClient
-	config config.Config
-	logger zerolog.Logger
-	albums map[string]tidal.Album
+	client   TidalClient
+	config   config.Config
+	template *namer.Template
+	logger   zerolog.Logger
+	albums   map[string]tidal.Album
 }
 
 // NewPlaylistWriter builds a PlaylistWriter over client and cfg, tagging logger
@@ -48,10 +49,11 @@ type PlaylistWriter struct {
 // for concurrent use: its album cache is an unsynchronized map.
 func NewPlaylistWriter(client TidalClient, cfg config.Config, logger zerolog.Logger) *PlaylistWriter {
 	return &PlaylistWriter{
-		client: client,
-		config: cfg,
-		logger: logger.With().Str("component", componentPlaylist).Logger(),
-		albums: make(map[string]tidal.Album),
+		client:   client,
+		config:   cfg,
+		template: namer.Compile(cfg.PathTemplate),
+		logger:   logger.With().Str("component", componentPlaylist).Logger(),
+		albums:   make(map[string]tidal.Album),
 	}
 }
 
@@ -139,7 +141,7 @@ func (w *PlaylistWriter) trackPath(ctx context.Context, dir string, track tidal.
 		return "", err
 	}
 
-	rel, err := namer.Render(w.config.PathTemplate, buildTrackMeta(track, album))
+	rel, err := w.template.Render(buildTrackMeta(track, album))
 	if err != nil {
 		return "", fmt.Errorf("render path for track %d: %w", track.ID, err)
 	}

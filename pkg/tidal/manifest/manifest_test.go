@@ -14,7 +14,7 @@ import (
 
 const codecMime = "audio/mp4"
 
-func loadFixture(t *testing.T, name string) string {
+func loadFixture(t testing.TB, name string) string {
 	t.Helper()
 
 	raw, err := os.ReadFile(filepath.Join("testdata", name))

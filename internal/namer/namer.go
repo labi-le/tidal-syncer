@@ -8,9 +8,7 @@ package namer
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
-	"strings"
 )
 
 // ErrEmptyTemplate is returned by Render when the template, once its tokens are
@@ -21,6 +19,11 @@ const (
 	separator  = "/"
 	discPrefix = "Disc "
 	singleDisc = 1
+	// trackPadWidth is the minimum digit count for a rendered track number,
+	// matching the previous "%02d" formatting (single digits gain a leading 0).
+	trackPadWidth      = 2
+	tokenOpen     byte = '{'
+	tokenClose    byte = '}'
 )
 
 const (
@@ -50,45 +53,22 @@ type TrackMeta struct {
 	DiscCount   int    // Total discs in the album; greater than one inserts a "Disc N" directory.
 }
 
-// Render substitutes the template tokens with values from m and returns a
-// slash-separated relative path. Each path component is independently
-// sanitized, so a field value containing "/" or ".." can never escape the
-// destination tree. When m.DiscCount is greater than one, a "Disc N"
-// subdirectory is inserted ahead of the file name.
-func Render(template string, m TrackMeta) (relPath string, err error) {
-	replacer := newReplacer(m)
-	segments := strings.Split(template, separator)
-	components := make([]string, 0, len(segments)+1)
-	for _, segment := range segments {
-		substituted := replacer.Replace(segment)
-		if substituted == "" {
-			continue
-		}
-		components = append(components, Sanitize(substituted))
-	}
-	if len(components) == 0 {
-		return "", ErrEmptyTemplate
-	}
-	if m.DiscCount > singleDisc {
-		components = insertDiscDir(components, m.Disc)
-	}
-	return strings.Join(components, separator), nil
+// Render compiles template and renders it against m in a single call. Callers
+// in a hot loop that reuse one template should Compile it once and call
+// Template.Render per track, which parses the template only once instead of on
+// every render.
+func Render(template string, m TrackMeta) (string, error) {
+	return Compile(template).Render(m)
 }
 
-// newReplacer builds a single-pass token replacer for m. Track is padded to two
-// digits and Disc to one; all other tokens substitute their raw field value.
-func newReplacer(m TrackMeta) *strings.Replacer {
-	return strings.NewReplacer(
-		tokenAlbumArtist, m.AlbumArtist,
-		tokenArtist, m.Artist,
-		tokenAlbum, m.Album,
-		tokenTitle, m.Title,
-		tokenTrack, fmt.Sprintf("%02d", m.Track),
-		tokenDisc, strconv.Itoa(m.Disc),
-		tokenYear, m.Year,
-		tokenExt, m.Ext,
-		tokenISRC, m.ISRC,
-	)
+// padTrack renders n zero-padded to trackPadWidth digits, matching the previous
+// fmt "%02d" output without its reflection and formatting cost.
+func padTrack(n int) string {
+	s := strconv.Itoa(n)
+	if len(s) < trackPadWidth {
+		return "0" + s
+	}
+	return s
 }
 
 // insertDiscDir returns components with a sanitized "Disc N" directory inserted

@@ -1,0 +1,158 @@
+goos: linux
+goarch: amd64
+pkg: github.com/labi-le/tidal-syncer/internal/namer
+cpu: AMD Ryzen 7 9800X3D 8-Core Processor           
+BenchmarkRender/single_disc-16         	  776143	      1466 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/single_disc-16         	  822924	      1465 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/single_disc-16         	  743384	      1473 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/single_disc-16         	  817634	      1465 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/single_disc-16         	  812163	      1470 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/single_disc-16         	  805200	      1482 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/single_disc-16         	  807274	      1464 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/single_disc-16         	  825922	      1465 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/single_disc-16         	  827959	      1464 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/single_disc-16         	  815281	      1466 ns/op	    3522 B/op	      46 allocs/op
+BenchmarkRender/multi_disc-16          	  718069	      1691 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkRender/multi_disc-16          	  703858	      1714 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkRender/multi_disc-16          	  703219	      1702 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkRender/multi_disc-16          	  708688	      1698 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkRender/multi_disc-16          	  693656	      1699 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkRender/multi_disc-16          	  700624	      1692 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkRender/multi_disc-16          	  702748	      1715 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkRender/multi_disc-16          	  711542	      1689 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkRender/multi_disc-16          	  703575	      1707 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkRender/multi_disc-16          	  694798	      1705 ns/op	    3746 B/op	      51 allocs/op
+BenchmarkSanitize/clean-16             	15679058	        75.20 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/clean-16             	16099249	        74.75 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/clean-16             	15929929	        76.74 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/clean-16             	15635689	        74.92 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/clean-16             	15866029	        74.66 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/clean-16             	15251959	        75.91 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/clean-16             	16115610	        74.34 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/clean-16             	16011840	        74.30 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/clean-16             	16072158	        74.46 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/clean-16             	15909369	        74.89 ns/op	      16 B/op	       1 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8029470	       150.3 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8090560	       148.4 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8101903	       148.2 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8102526	       148.0 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8138667	       148.4 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8091200	       148.7 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8029830	       148.8 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8072442	       148.3 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8007013	       149.7 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/illegal_chars-16     	 8031680	       149.6 ns/op	      48 B/op	       2 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2970435	       405.3 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2873798	       410.1 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2959668	       405.4 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2959646	       405.6 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2960247	       405.6 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2971254	       405.1 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2956624	       405.0 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2969412	       404.8 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2934118	       407.0 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/decomposed_nfc-16    	 2956672	       405.0 ns/op	     656 B/op	       4 allocs/op
+BenchmarkSanitize/reserved_name-16     	28277908	        42.27 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/reserved_name-16     	28160624	        42.30 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/reserved_name-16     	28071337	        42.46 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/reserved_name-16     	27668310	        42.31 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/reserved_name-16     	28117609	        42.27 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/reserved_name-16     	28380808	        42.46 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/reserved_name-16     	28098819	        42.29 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/reserved_name-16     	28054306	        42.25 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/reserved_name-16     	28251632	        42.33 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/reserved_name-16     	28131807	        43.60 ns/op	       4 B/op	       1 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   90061	     12978 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   90668	     13279 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   93612	     12776 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   94306	     12774 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   93282	     12841 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   89918	     13208 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   93972	     12785 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   93024	     12866 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   94128	     12810 ns/op	       0 B/op	       0 allocs/op
+BenchmarkSanitize/truncate_multibyte-16         	   91380	     13252 ns/op	       0 B/op	       0 allocs/op
+PASS
+ok  	github.com/labi-le/tidal-syncer/internal/namer	83.612s
+goos: linux
+goarch: amd64
+pkg: github.com/labi-le/tidal-syncer/pkg/tidal/manifest
+cpu: AMD Ryzen 7 9800X3D 8-Core Processor           
+BenchmarkParse/bts-16      	 1000000	      1095 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/bts-16      	 1000000	      1076 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/bts-16      	 1000000	      1076 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/bts-16      	 1000000	      1074 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/bts-16      	 1000000	      1073 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/bts-16      	 1000000	      1077 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/bts-16      	 1000000	      1075 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/bts-16      	 1000000	      1077 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/bts-16      	 1000000	      1076 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/bts-16      	 1000000	      1077 ns/op	     656 B/op	      13 allocs/op
+BenchmarkParse/dash-16     	  120094	      9994 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkParse/dash-16     	  120566	      9999 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkParse/dash-16     	  120182	     10172 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkParse/dash-16     	  118663	     10038 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkParse/dash-16     	  120046	      9983 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkParse/dash-16     	  120136	     10005 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkParse/dash-16     	  119592	     10005 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkParse/dash-16     	  119643	     10007 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkParse/dash-16     	  119905	     10028 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkParse/dash-16     	  119982	     10011 ns/op	    7432 B/op	     148 allocs/op
+BenchmarkSegmentURLs-16    	 6489121	       183.8 ns/op	     336 B/op	       6 allocs/op
+BenchmarkSegmentURLs-16    	 6492891	       184.2 ns/op	     336 B/op	       6 allocs/op
+BenchmarkSegmentURLs-16    	 6520273	       184.5 ns/op	     336 B/op	       6 allocs/op
+BenchmarkSegmentURLs-16    	 6517744	       184.4 ns/op	     336 B/op	       6 allocs/op
+BenchmarkSegmentURLs-16    	 6481770	       184.9 ns/op	     336 B/op	       6 allocs/op
+BenchmarkSegmentURLs-16    	 6469586	       184.6 ns/op	     336 B/op	       6 allocs/op
+BenchmarkSegmentURLs-16    	 6495687	       184.0 ns/op	     336 B/op	       6 allocs/op
+BenchmarkSegmentURLs-16    	 6540522	       184.5 ns/op	     336 B/op	       6 allocs/op
+BenchmarkSegmentURLs-16    	 6508948	       184.9 ns/op	     336 B/op	       6 allocs/op
+BenchmarkSegmentURLs-16    	 6491802	       187.8 ns/op	     336 B/op	       6 allocs/op
+PASS
+ok  	github.com/labi-le/tidal-syncer/pkg/tidal/manifest	34.814s
+goos: linux
+goarch: amd64
+pkg: github.com/labi-le/tidal-syncer/internal/tag
+cpu: AMD Ryzen 7 9800X3D 8-Core Processor           
+BenchmarkIntegrityCheck-16    	   14989	     79721 ns/op	  364829 B/op	     164 allocs/op
+BenchmarkIntegrityCheck-16    	   15093	     79395 ns/op	  364799 B/op	     164 allocs/op
+BenchmarkIntegrityCheck-16    	   15093	     79506 ns/op	  364819 B/op	     164 allocs/op
+BenchmarkIntegrityCheck-16    	   15121	     79344 ns/op	  364809 B/op	     164 allocs/op
+BenchmarkIntegrityCheck-16    	   15121	     79408 ns/op	  364792 B/op	     164 allocs/op
+BenchmarkIntegrityCheck-16    	   15223	     79172 ns/op	  364818 B/op	     164 allocs/op
+BenchmarkIntegrityCheck-16    	   15163	     78868 ns/op	  364801 B/op	     164 allocs/op
+BenchmarkIntegrityCheck-16    	   15271	     79098 ns/op	  364833 B/op	     164 allocs/op
+BenchmarkIntegrityCheck-16    	   14955	     79963 ns/op	  364810 B/op	     164 allocs/op
+BenchmarkIntegrityCheck-16    	   15162	     79077 ns/op	  364814 B/op	     164 allocs/op
+BenchmarkWriteTags-16         	    8098	    143671 ns/op	  389608 B/op	    3249 allocs/op
+BenchmarkWriteTags-16         	    8942	    131897 ns/op	  387319 B/op	    3244 allocs/op
+BenchmarkWriteTags-16         	    8754	    132238 ns/op	  387318 B/op	    3244 allocs/op
+BenchmarkWriteTags-16         	    9039	    131232 ns/op	  387282 B/op	    3244 allocs/op
+BenchmarkWriteTags-16         	    8720	    132232 ns/op	  387317 B/op	    3244 allocs/op
+BenchmarkWriteTags-16         	    9114	    133297 ns/op	  387319 B/op	    3244 allocs/op
+BenchmarkWriteTags-16         	    9228	    134289 ns/op	  387318 B/op	    3244 allocs/op
+BenchmarkWriteTags-16         	    9178	    131292 ns/op	  387317 B/op	    3244 allocs/op
+BenchmarkWriteTags-16         	    9154	    133784 ns/op	  387282 B/op	    3244 allocs/op
+BenchmarkWriteTags-16         	    8660	    135688 ns/op	  387285 B/op	    3244 allocs/op
+BenchmarkWriteImage-16        	   10000	    104143 ns/op	  291345 B/op	    3160 allocs/op
+BenchmarkWriteImage-16        	   10000	    103781 ns/op	  291346 B/op	    3160 allocs/op
+BenchmarkWriteImage-16        	   10000	    104520 ns/op	  291345 B/op	    3160 allocs/op
+BenchmarkWriteImage-16        	   10000	    102486 ns/op	  291345 B/op	    3160 allocs/op
+BenchmarkWriteImage-16        	   10000	    103604 ns/op	  291457 B/op	    3161 allocs/op
+BenchmarkWriteImage-16        	   10000	    101778 ns/op	  291457 B/op	    3161 allocs/op
+BenchmarkWriteImage-16        	   10000	    101360 ns/op	  291345 B/op	    3160 allocs/op
+BenchmarkWriteImage-16        	   10000	    101257 ns/op	  291345 B/op	    3160 allocs/op
+BenchmarkWriteImage-16        	   10000	    103333 ns/op	  291345 B/op	    3160 allocs/op
+BenchmarkWriteImage-16        	   10000	    104680 ns/op	  291457 B/op	    3161 allocs/op
+BenchmarkTagFile-16           	    3886	    303985 ns/op	 1106314 B/op	    6420 allocs/op
+BenchmarkTagFile-16           	    3939	    304924 ns/op	 1106320 B/op	    6420 allocs/op
+BenchmarkTagFile-16           	    3894	    306257 ns/op	 1106322 B/op	    6420 allocs/op
+BenchmarkTagFile-16           	    3880	    307590 ns/op	 1106325 B/op	    6420 allocs/op
+BenchmarkTagFile-16           	    3876	    307776 ns/op	 1106320 B/op	    6420 allocs/op
+BenchmarkTagFile-16           	    3729	    316842 ns/op	 1106322 B/op	    6420 allocs/op
+BenchmarkTagFile-16           	    3856	    318494 ns/op	 1106324 B/op	    6420 allocs/op
+BenchmarkTagFile-16           	    3805	    318960 ns/op	 1106319 B/op	    6420 allocs/op
+BenchmarkTagFile-16           	    3817	    310138 ns/op	 1106329 B/op	    6420 allocs/op
+BenchmarkTagFile-16           	    3861	    316483 ns/op	 1106327 B/op	    6420 allocs/op
+PASS
+ok  	github.com/labi-le/tidal-syncer/internal/tag	46.213s
