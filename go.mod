@@ -8,7 +8,7 @@ require (
 	github.com/mewkiz/flac v1.0.13
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
-	go.senan.xyz/taglib v0.12.0
+	go.senan.xyz/taglib v0.13.0
 	golang.org/x/sync v0.21.0
 	golang.org/x/sys v0.46.0
 	golang.org/x/text v0.38.0
