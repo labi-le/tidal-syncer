@@ -61,6 +61,51 @@ tidal-syncer sync --config ./config.yaml
 tidal-syncer daemon
 ```
 
+## Metrics (Prometheus & Grafana)
+
+The daemon can expose a Prometheus `/metrics` endpoint with live library and sync
+statistics — track counts by status and quality, genre distribution, favorites,
+distinct artists/albums, plus per-cycle counters (cycles, failures by class,
+duration, last success) and the standard `go_*` / `process_*` runtime metrics.
+Every app metric is namespaced `tidal_syncer_*`.
+
+Enable it in `config.yaml` (off by default):
+
+```yaml
+metrics:
+  enabled: true
+  address: ":9101"
+```
+
+`docker-compose.yml` publishes the endpoint on `127.0.0.1:9101` (loopback), so a
+Prometheus already running on the host can scrape it:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: tidal-syncer
+    static_configs:
+      - targets: ["127.0.0.1:9101"]
+```
+
+### NixOS
+
+For a host managed with NixOS that already runs Prometheus + Grafana, this repo
+is a flake exposing a monitoring module that adds the scrape job and provisions
+the Grafana dashboard (`deploy/grafana/tidal-syncer.json`, which picks its
+Prometheus datasource via a template variable):
+
+```nix
+# flake.nix
+inputs.tidal-syncer.url = "github:labi-le/tidal-syncer";
+
+# configuration.nix
+imports = [ inputs.tidal-syncer.nixosModules.monitoring ];
+```
+
+The dashboard JSON under `deploy/grafana/` can also be imported into any Grafana
+instance by hand.
+
 ## Querying the library (SQLite)
 
 Sync state lives in `data/tidal-syncer.db`. To list your most recently

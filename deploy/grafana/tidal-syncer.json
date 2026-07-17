@@ -1,0 +1,570 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 0,
+  "schemaVersion": 39,
+  "tags": [
+    "tidal-syncer"
+  ],
+  "title": "tidal-syncer",
+  "uid": "tidal-syncer",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "hide": 0,
+        "current": {},
+        "regex": ""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Downloaded",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tidal_syncer_tracks{status=\"done\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Failed",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tidal_syncer_tracks{status=\"failed\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Favorited tracks",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tidal_syncer_favorites",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Distinct artists",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tidal_syncer_distinct_artists",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Distinct albums",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tidal_syncer_distinct_albums",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Hi-Res share",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(tidal_syncer_tracks_by_quality{quality=\"HI_RES_LOSSLESS\"}) / sum(tidal_syncer_tracks_by_quality)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "piechart",
+      "title": "Tracks by quality",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "pieType": "donut"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tidal_syncer_tracks_by_quality",
+          "legendFormat": "{{quality}}",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Top genres",
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(12, tidal_syncer_tracks_by_genre)",
+          "legendFormat": "{{genre}}",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Sync cycle & error rate (per 5m)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(tidal_syncer_sync_cycles_total[5m])",
+          "legendFormat": "cycles",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "rate(tidal_syncer_sync_errors_total[5m])",
+          "legendFormat": "errors {{class}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Sync cycle duration",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(tidal_syncer_sync_duration_seconds_bucket[1h])) by (le))",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.50, sum(rate(tidal_syncer_sync_duration_seconds_bucket[1h])) by (le))",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Last successful sync",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tidal_syncer_last_cycle_success_timestamp_seconds * 1000",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Permanent failures",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tidal_syncer_permanent_failures",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Build",
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^version$/"
+        },
+        "colorMode": "none",
+        "textMode": "name"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tidal_syncer_build_info",
+          "legendFormat": "{{version}}",
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    }
+  ],
+  "timezone": "browser"
+}

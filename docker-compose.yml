@@ -40,6 +40,11 @@ services:
     command: ["daemon"]
     user: "${PUID:-65532}:${PGID:-65532}"
     restart: always
+    # Prometheus metrics endpoint (served when metrics.enabled in config.yaml),
+    # published on loopback so a host Prometheus — or the flake's
+    # nixosModules.monitoring — can scrape 127.0.0.1:9101 without exposing it.
+    ports:
+      - "127.0.0.1:9101:9101"
     # Headroom over the in-process <5s graceful-shutdown budget; the container is
     # SIGKILLed only if the binary does not exit cleanly within 30s of SIGTERM.
     stop_grace_period: 30s

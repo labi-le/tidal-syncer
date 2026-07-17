@@ -99,6 +99,11 @@ ENV TIDAL_FFMPEG=/usr/local/bin/ffmpeg
 # Host bind dirs must be writable by UID 65532.
 VOLUME ["/app/Music", "/app/data"]
 
+# Prometheus metrics endpoint served by the daemon when metrics.enabled is set in
+# config.yaml. Documentation only; the daemon binds config.metrics.address
+# (default :9101). Publish it or scrape it over the compose network.
+EXPOSE 9101
+
 # Already nonroot in the base; restated numerically for an unambiguous UID:GID.
 USER 65532:65532
 

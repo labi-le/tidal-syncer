@@ -80,3 +80,11 @@ log:
   level: info
   # One of: console (human-readable), json (structured).
   format: console
+
+# Prometheus metrics endpoint, scraped by Prometheus and visualized in Grafana.
+metrics:
+  # Expose GET /metrics over HTTP from the daemon. Off by default; set to true to
+  # let Prometheus scrape library and sync statistics (see docker-compose.yml).
+  enabled: false
+  # host:port the daemon's metrics server binds (host may be empty for all NICs).
+  address: ":9101"

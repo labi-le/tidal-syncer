@@ -91,7 +91,7 @@ func TestRunDaemon_TimeWindowSleepsUntilWindowThenRuns(t *testing.T) {
 				Min:   20 * time.Minute,
 				Max:   20 * time.Minute,
 			},
-		}, cc.cycle(nil))
+		}, cc.cycle(nil), nil)
 	}()
 
 	select {

@@ -25,6 +25,7 @@ type Config struct {
 	Concurrency  int       `yaml:"concurrency"`
 	TidalAuth    TidalAuth `yaml:"tidal_auth"`
 	Log          Log       `yaml:"log"`
+	Metrics      Metrics   `yaml:"metrics"`
 }
 
 // Paths groups the filesystem locations tidal-syncer reads and writes.
@@ -100,6 +101,12 @@ type Log struct {
 	Format string `yaml:"format"`
 }
 
+// Metrics configures the Prometheus metrics endpoint exposed by the daemon.
+type Metrics struct {
+	Enabled bool   `yaml:"enabled"`
+	Address string `yaml:"address"`
+}
+
 const (
 	DaemonModePolling    = "polling"
 	DaemonModeTimeWindow = "time_window"
@@ -126,6 +133,8 @@ const (
 	// selects structured JSON output. Both are the valid values for log.format.
 	LogFormatConsole = "console"
 	LogFormatJSON    = "json"
+
+	defaultMetricsAddress = ":9101"
 )
 
 // Defaults returns the baseline configuration applied before user overrides.
@@ -161,6 +170,7 @@ func Defaults() Config {
 			Level:  defaultLogLevel,
 			Format: defaultLogFormat,
 		},
+		Metrics: Metrics{Enabled: false, Address: defaultMetricsAddress},
 	}
 }
 

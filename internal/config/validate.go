@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 	"time"
@@ -69,6 +70,11 @@ func (c Config) Validate() error {
 	}
 	if err := requireNonEmpty("tidal_auth.client_secret", c.TidalAuth.ClientSecret); err != nil {
 		return err
+	}
+	if c.Metrics.Enabled {
+		if _, _, err := net.SplitHostPort(c.Metrics.Address); err != nil {
+			return fmt.Errorf("metrics.address %q is invalid: %w", c.Metrics.Address, err)
+		}
 	}
 	return nil
 }

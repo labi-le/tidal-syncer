@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/labi-le/tidal-syncer/internal/config"
+	"github.com/labi-le/tidal-syncer/internal/metrics"
 )
 
 var daemonNowFn = time.Now
@@ -17,9 +18,10 @@ func runPollingDaemon(
 	lg *zerolog.Logger,
 	polling config.DurationRange,
 	cycle func(context.Context) error,
+	rec *metrics.Metrics,
 ) error {
 	for ctx.Err() == nil {
-		if err := runDaemonCycle(ctx, lg, cycle); err != nil {
+		if err := runDaemonCycle(ctx, lg, cycle, rec); err != nil {
 			return err
 		}
 		if err := daemonWaitFn(ctx, daemonDelayFn(polling)); err != nil {
@@ -35,6 +37,7 @@ func runTimeWindowDaemon(
 	lg *zerolog.Logger,
 	window config.DaemonTimeWindow,
 	cycle func(context.Context) error,
+	rec *metrics.Metrics,
 ) error {
 	for ctx.Err() == nil {
 		now := daemonNowFn()
@@ -53,7 +56,7 @@ func runTimeWindowDaemon(
 
 			continue
 		}
-		if err = runDaemonCycle(ctx, lg, cycle); err != nil {
+		if err = runDaemonCycle(ctx, lg, cycle, rec); err != nil {
 			return err
 		}
 		if err = daemonWaitFn(ctx, daemonDelayFn(window.DelayRange())); err != nil {

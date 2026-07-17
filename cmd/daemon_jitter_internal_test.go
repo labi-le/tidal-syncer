@@ -47,7 +47,7 @@ func TestRunDaemon_UsesPollingRangeForEachWait(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDaemon(ctx, &log, config.Daemon{Mode: config.DaemonModePolling, Polling: rangeCfg}, cc.cycle(nil))
+		done <- runDaemon(ctx, &log, config.Daemon{Mode: config.DaemonModePolling, Polling: rangeCfg}, cc.cycle(nil), nil)
 	}()
 
 	select {

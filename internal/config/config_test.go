@@ -69,6 +69,7 @@ func TestLoadExampleMatchesExpected(t *testing.T) {
 			Level:  "info",
 			Format: "console",
 		},
+		Metrics: config.Metrics{Enabled: false, Address: ":9101"},
 	}
 
 	if got != want {

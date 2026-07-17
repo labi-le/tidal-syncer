@@ -59,7 +59,7 @@ func TestRunDaemon_LoopRunsMultipleCycles(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDaemon(ctx, &log, pollingDaemonConfig(time.Millisecond), cc.cycle(nil))
+		done <- runDaemon(ctx, &log, pollingDaemonConfig(time.Millisecond), cc.cycle(nil), nil)
 	}()
 
 	select {
@@ -82,7 +82,7 @@ func TestRunDaemon_UnknownModeReturnsError(t *testing.T) {
 	log := zerolog.Nop()
 	cc := &cycleCounter{reached: make(chan struct{})}
 
-	err := runDaemon(context.Background(), &log, config.Daemon{Mode: "bogus"}, cc.cycle(nil))
+	err := runDaemon(context.Background(), &log, config.Daemon{Mode: "bogus"}, cc.cycle(nil), nil)
 	if !errors.Is(err, errUnknownDaemonMode) {
 		t.Fatalf("runDaemon(mode=bogus) error = %v, want errUnknownDaemonMode", err)
 	}
@@ -104,7 +104,7 @@ func TestRunDaemon_GracefulExitOnCancel(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDaemon(ctx, &log, pollingDaemonConfig(time.Hour), cc.cycle(nil))
+		done <- runDaemon(ctx, &log, pollingDaemonConfig(time.Hour), cc.cycle(nil), nil)
 	}()
 
 	requireDaemonExit(t, done)
@@ -123,7 +123,7 @@ func TestRunDaemon_DeadCredentialsKeepsLooping(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDaemon(ctx, &log, pollingDaemonConfig(time.Millisecond), cc.cycle(auth.ErrDeadCredentials))
+		done <- runDaemon(ctx, &log, pollingDaemonConfig(time.Millisecond), cc.cycle(auth.ErrDeadCredentials), nil)
 	}()
 
 	select {
@@ -153,7 +153,7 @@ func TestRunDaemonCycle_ReauthRequired(t *testing.T) {
 	var buf bytes.Buffer
 	lg := zerolog.New(&buf)
 
-	if err := runDaemonCycle(t.Context(), &lg, failingCycle(auth.ErrReauthRequired)); err != nil {
+	if err := runDaemonCycle(t.Context(), &lg, failingCycle(auth.ErrReauthRequired), nil); err != nil {
 		t.Fatalf("runDaemonCycle on reauth-required: got %v, want nil (keep polling)", err)
 	}
 
@@ -174,7 +174,7 @@ func TestRunDaemonCycle_DeadCreds(t *testing.T) {
 	var buf bytes.Buffer
 	lg := zerolog.New(&buf)
 
-	if err := runDaemonCycle(t.Context(), &lg, failingCycle(auth.ErrDeadCredentials)); err != nil {
+	if err := runDaemonCycle(t.Context(), &lg, failingCycle(auth.ErrDeadCredentials), nil); err != nil {
 		t.Fatalf("runDaemonCycle on dead credentials: got %v, want nil", err)
 	}
 
@@ -192,7 +192,7 @@ func TestRunDaemonCycle_Transient(t *testing.T) {
 	var buf bytes.Buffer
 	lg := zerolog.New(&buf)
 
-	if err := runDaemonCycle(t.Context(), &lg, failingCycle(errors.New("network blip"))); err != nil {
+	if err := runDaemonCycle(t.Context(), &lg, failingCycle(errors.New("network blip")), nil); err != nil {
 		t.Fatalf("runDaemonCycle on transient error: got %v, want nil", err)
 	}
 
@@ -209,7 +209,7 @@ func TestRunDaemonCycle_Canceled(t *testing.T) {
 
 	log := zerolog.Nop()
 
-	got := runDaemonCycle(context.Background(), &log, failingCycle(context.Canceled))
+	got := runDaemonCycle(context.Background(), &log, failingCycle(context.Canceled), nil)
 	if !errors.Is(got, context.Canceled) {
 		t.Fatalf("runDaemonCycle on cancellation: got %v, want context.Canceled", got)
 	}
