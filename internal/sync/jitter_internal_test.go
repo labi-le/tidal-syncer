@@ -40,6 +40,10 @@ func TestSyncOnce_WaitsForWorkerJitterBeforeTrackPickup(t *testing.T) {
 		album:  jitterTestAlbum(),
 	}
 	dl := jitterTestDownloader{src: filepath.Join("testdata", "sample.flac")}
+	var (
+		mu        sync.Mutex
+		durations []time.Duration
+	)
 	engine := NewEngine(Params{
 		Client:     client,
 		Downloader: dl,
@@ -48,32 +52,21 @@ func TestSyncOnce_WaitsForWorkerJitterBeforeTrackPickup(t *testing.T) {
 		Config:     cfg,
 		Logger:     zerolog.Nop(),
 		Limiter:    rate.NewLimiter(rate.Inf, 1),
-	})
+		DelayFn: func(config.DurationRange) time.Duration {
+			return 1500 * time.Millisecond
+		},
+		Wait: func(waitCtx context.Context, d time.Duration) error {
+			mu.Lock()
+			durations = append(durations, d)
+			mu.Unlock()
 
-	var (
-		mu        sync.Mutex
-		durations []time.Duration
-	)
-	oldPick := workerDelayFn
-	oldWait := waitForDelay
-	workerDelayFn = func(config.DurationRange) time.Duration {
-		return 1500 * time.Millisecond
-	}
-	waitForDelay = func(waitCtx context.Context, d time.Duration) error {
-		mu.Lock()
-		durations = append(durations, d)
-		mu.Unlock()
-
-		select {
-		case <-waitCtx.Done():
-			return waitCtx.Err()
-		default:
-			return nil
-		}
-	}
-	t.Cleanup(func() {
-		workerDelayFn = oldPick
-		waitForDelay = oldWait
+			select {
+			case <-waitCtx.Done():
+				return waitCtx.Err()
+			default:
+				return nil
+			}
+		},
 	})
 
 	if _, _, err = engine.SyncOnce(ctx); err != nil {

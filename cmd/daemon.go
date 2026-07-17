@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/signal"
 	"syscall"
 
@@ -17,7 +18,7 @@ import (
 // newDaemonCmd builds the `daemon` subcommand that runs the full sync pipeline
 // on a poll loop until it receives SIGTERM/SIGINT, then shuts down gracefully.
 // Each sync cycle opens its own short-lived store.
-func newDaemonCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.Command {
+func newDaemonCmd(configPath *string, verbose *bool) *cobra.Command {
 	return &cobra.Command{
 		Use:   "daemon",
 		Short: "Run tidal-syncer as a background daemon",
@@ -27,19 +28,25 @@ func newDaemonCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.
 				return fmt.Errorf("daemon: %w", err)
 			}
 
-			logger, err := leveledLogger(*lg, cfg.Log.Level, *verbose)
+			logger, err := buildLogger(os.Stderr, cfg.Log.Format, cfg.Log.Level, *verbose)
 			if err != nil {
 				return fmt.Errorf("daemon: %w", err)
 			}
 
 			cycle := func(ctx context.Context) error {
-				return runSync(ctx, *configPath, *verbose, logger, false)
+				return runSync(ctx, *configPath, *verbose, os.Stderr, false)
 			}
 
 			return runDaemon(cmd.Context(), &logger, cfg.Daemon, cycle)
 		},
 	}
 }
+
+// errUnknownDaemonMode is returned by runDaemon when config.Daemon.Mode is not a
+// known mode. Config validation rejects unknown modes up front, so this is a
+// defensive guard that keeps the mode switch exhaustive instead of silently
+// no-opping the daemon.
+var errUnknownDaemonMode = errors.New("unknown daemon mode")
 
 // runDaemon runs cycle once immediately, then once per interval tick, until ctx
 // is cancelled by SIGTERM/SIGINT, at which point it returns nil for a graceful
@@ -58,11 +65,14 @@ func runDaemon(
 	lg.Info().Str("mode", daemon.Mode).Msg("daemon started")
 
 	var err error
-	if daemon.Mode == config.DaemonModePolling {
+
+	switch daemon.Mode {
+	case config.DaemonModePolling:
 		err = runPollingDaemon(ctx, lg, daemon.Polling, cycle)
-	}
-	if daemon.Mode == config.DaemonModeTimeWindow {
+	case config.DaemonModeTimeWindow:
 		err = runTimeWindowDaemon(ctx, lg, daemon.TimeWindow, cycle)
+	default:
+		return fmt.Errorf("%w: %q", errUnknownDaemonMode, daemon.Mode)
 	}
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return err

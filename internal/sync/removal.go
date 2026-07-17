@@ -32,6 +32,11 @@ const (
 	opReconcile = "removal.Reconcile"
 )
 
+// errRemovalFatal marks a Reconcile error that must abort the whole pass: a
+// broken store or snapshot, as opposed to a single track's filesystem failure,
+// which is logged, counted, and skipped so one bad file never wedges the run.
+var errRemovalFatal = errors.New("removal: fatal store error")
+
 // RemoverParams bundles the Remover's injected dependencies and configuration.
 type RemoverParams struct {
 	Store  *store.Store
@@ -65,17 +70,19 @@ func NewRemover(p RemoverParams) *Remover {
 // Reconcile diffs the previous favorites snapshot against current and applies the
 // configured policy to every track present before but absent from current. On the
 // first run there is no stored snapshot, so DiffSnapshot reports nothing removed
-// and no file is touched. Per-track resolution failures are logged and skipped;
-// only a snapshot or store error aborts the pass.
-func (r *Remover) Reconcile(ctx context.Context, current []store.SnapshotItem) error {
+// and no file is touched. Per-track resolution or filesystem failures are logged,
+// skipped, and returned as the set of tidal ids whose removal is still pending, so
+// the caller can retain them in the next snapshot and retry them next run; only a
+// snapshot or store error aborts the pass.
+func (r *Remover) Reconcile(ctx context.Context, current []store.SnapshotItem) ([]string, error) {
 	logger := ctxlog.Op(r.logger, opReconcile)
 
 	_, removed, err := r.store.DiffSnapshot(ctx, SnapshotKindTracks, current)
 	if err != nil {
-		return fmt.Errorf("removal: diff snapshot: %w", err)
+		return nil, fmt.Errorf("removal: diff snapshot: %w", err)
 	}
 	if len(removed) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	if r.policy == policyKeep {
@@ -83,16 +90,26 @@ func (r *Remover) Reconcile(ctx context.Context, current []store.SnapshotItem) e
 			logger.Info().Str("track", id).Str("policy", policyKeep).Msg("kept unfavorited track")
 		}
 
-		return nil
+		return nil, nil
 	}
 
+	var pending []string
 	for _, id := range removed {
-		if err = r.applyPolicy(ctx, logger, id); err != nil {
-			return err
+		err = r.applyPolicy(ctx, logger, id)
+		if err == nil {
+			continue
 		}
+		if errors.Is(err, errRemovalFatal) {
+			return nil, err
+		}
+		pending = append(pending, id)
+		logger.Error().Err(err).Str("track", id).Msg("removal failed; will retry next run")
+	}
+	if len(pending) > 0 {
+		logger.Warn().Int("failed", len(pending)).Msg("some unfavorited tracks could not be removed")
 	}
 
-	return nil
+	return pending, nil
 }
 
 // applyPolicy resolves the on-disk path of unfavorited track id and applies the
@@ -107,7 +124,7 @@ func (r *Remover) applyPolicy(ctx context.Context, logger zerolog.Logger, id str
 			return nil
 		}
 
-		return fmt.Errorf("removal: get track %q: %w", id, err)
+		return fmt.Errorf("%w: get track %q: %w", errRemovalFatal, id, err)
 	}
 	if track.Path == "" {
 		logger.Warn().Str("track", id).Msg("unfavorited track has no stored path; skipping")
@@ -175,7 +192,7 @@ func (r *Remover) mirror(logger zerolog.Logger, id, path string) error {
 }
 
 // trash relocates the unfavorited track's audio file and its .lrc sidecar under
-// <music>/.trash/, preserving their layout relative to the music root.
+// <music>/.trash/, preserving their layout, then prunes any emptied source dirs.
 func (r *Remover) trash(logger zerolog.Logger, id, path string) error {
 	moved, err := r.moveToTrash(path)
 	if err != nil {
@@ -194,6 +211,8 @@ func (r *Remover) trash(logger zerolog.Logger, id, path string) error {
 			logger.Info().Str("track", id).Str("path", lrc).Msg("trashed lyrics sidecar")
 		}
 	}
+
+	r.pruneEmptyDirs(logger, filepath.Dir(path))
 
 	return nil
 }

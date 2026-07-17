@@ -144,6 +144,29 @@ func TestValidateRejectsInvalidFields(t *testing.T) {
 			wantSubstr: []string{"quality.floor"},
 		},
 		{
+			name:       "quality request lossy",
+			mutate:     func(c *config.Config) { c.Quality.Request = "HIGH" },
+			wantSubstr: []string{"quality.request"},
+		},
+		{
+			name:       "quality request empty",
+			mutate:     func(c *config.Config) { c.Quality.Request = "" },
+			wantSubstr: []string{"quality.request"},
+		},
+		{
+			name: "quality floor exceeds request",
+			mutate: func(c *config.Config) {
+				c.Quality.Request = "LOSSLESS"
+				c.Quality.Floor = "HI_RES_LOSSLESS"
+			},
+			wantSubstr: []string{"quality.floor", "quality.request"},
+		},
+		{
+			name:       "log format unknown",
+			mutate:     func(c *config.Config) { c.Log.Format = "xml" },
+			wantSubstr: []string{"log.format", "console", "json"},
+		},
+		{
 			name:       "path template missing title",
 			mutate:     func(c *config.Config) { c.PathTemplate = "{albumartist}/{album}.{ext}" },
 			wantSubstr: []string{"path_template", "title"},

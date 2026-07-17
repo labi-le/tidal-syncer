@@ -148,3 +148,86 @@ func Test_Store_MarkTrack_defaults_permanent_to_false(t *testing.T) {
 		t.Errorf("permanent = true, want false (got %+v)", got)
 	}
 }
+
+func Test_Store_MarkFailed_preserves_path_and_quality_of_a_done_track(t *testing.T) {
+	// Given a track already stored as done with a file path, obtained quality and genre.
+	ctx := context.Background()
+	st := newStore(t)
+	done := store.Track{
+		TidalID:          "7",
+		ISRC:             "US-XXX-00-00007",
+		AlbumID:          "70",
+		Path:             "/music/artist/album/07 - song.flac",
+		ObtainedQuality:  "LOSSLESS",
+		RequestedQuality: "LOSSLESS",
+		Genre:            "Rock;Metal",
+		Status:           store.StatusDone,
+	}
+	if err := st.MarkTrack(ctx, done); err != nil {
+		t.Fatalf("seed done track: %v", err)
+	}
+
+	// When a later re-attempt fails and is recorded via MarkFailed.
+	if err := st.MarkFailed(ctx, store.Track{
+		TidalID:          "7",
+		ISRC:             "US-XXX-00-00007",
+		AlbumID:          "70",
+		RequestedQuality: "HI_RES_LOSSLESS",
+		Status:           store.StatusFailed,
+		Permanent:        true,
+	}); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+
+	// Then status flips to failed but path/obtained-quality/genre survive, so the
+	// removal reconciler can still delete the file and the playlist keeps listing it.
+	got, err := st.GetTrack(ctx, "7")
+	if err != nil {
+		t.Fatalf("get track: %v", err)
+	}
+	if got.Status != store.StatusFailed {
+		t.Fatalf("status = %q, want failed", got.Status)
+	}
+	if !got.Permanent {
+		t.Fatal("permanent = false, want true")
+	}
+	if got.Path != done.Path {
+		t.Fatalf("path = %q, want preserved %q", got.Path, done.Path)
+	}
+	if got.ObtainedQuality != done.ObtainedQuality {
+		t.Fatalf("obtained quality = %q, want preserved %q", got.ObtainedQuality, done.ObtainedQuality)
+	}
+	if got.Genre != done.Genre {
+		t.Fatalf("genre = %q, want preserved %q", got.Genre, done.Genre)
+	}
+	if got.RequestedQuality != "HI_RES_LOSSLESS" {
+		t.Fatalf("requested quality = %q, want updated %q", got.RequestedQuality, "HI_RES_LOSSLESS")
+	}
+}
+
+func Test_Store_MarkFailed_records_a_new_track_with_no_file(t *testing.T) {
+	// Given a track never seen before that fails on its first attempt.
+	ctx := context.Background()
+	st := newStore(t)
+	if err := st.MarkFailed(ctx, store.Track{
+		TidalID:          "8",
+		ISRC:             "US-XXX-00-00008",
+		AlbumID:          "80",
+		RequestedQuality: "HI_RES_LOSSLESS",
+		Status:           store.StatusFailed,
+	}); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+
+	// Then it is stored as failed with an empty path, matching a track with no file.
+	got, err := st.GetTrack(ctx, "8")
+	if err != nil {
+		t.Fatalf("get track: %v", err)
+	}
+	if got.Status != store.StatusFailed {
+		t.Fatalf("status = %q, want failed", got.Status)
+	}
+	if got.Path != "" {
+		t.Fatalf("path = %q, want empty for a never-downloaded track", got.Path)
+	}
+}

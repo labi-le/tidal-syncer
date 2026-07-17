@@ -47,6 +47,10 @@ type Params struct {
 	Logger      zerolog.Logger
 	Limiter     *rate.Limiter
 	RetryFailed bool
+	// DelayFn and Wait override the worker-jitter hooks so tests can inject
+	// deterministic timing; both default to the package jitter functions.
+	DelayFn func(config.DurationRange) time.Duration
+	Wait    func(context.Context, time.Duration) error
 }
 
 // Engine orchestrates one or more synchronization runs over its injected ports.
@@ -61,6 +65,8 @@ type Engine struct {
 	limiter     *rate.Limiter
 	albums      *albumCache
 	retryFailed bool
+	delay       func(config.DurationRange) time.Duration
+	wait        func(context.Context, time.Duration) error
 }
 
 // NewEngine builds an Engine from p, defaulting the rate limiter to an unlimited
@@ -69,6 +75,14 @@ func NewEngine(p Params) *Engine {
 	limiter := p.Limiter
 	if limiter == nil {
 		limiter = rate.NewLimiter(rate.Inf, defaultLimiterBurst)
+	}
+	delay := p.DelayFn
+	if delay == nil {
+		delay = randomWorkerDelay
+	}
+	wait := p.Wait
+	if wait == nil {
+		wait = waitForDelay
 	}
 
 	return &Engine{
@@ -82,6 +96,8 @@ func NewEngine(p Params) *Engine {
 		limiter:     limiter,
 		albums:      newAlbumCache(),
 		retryFailed: p.RetryFailed,
+		delay:       delay,
+		wait:        wait,
 	}
 }
 
@@ -159,7 +175,7 @@ func (e *Engine) downloadAll(ctx context.Context, tracks []tidal.Track, c *count
 			if err := e.limiter.Wait(groupCtx); err != nil {
 				return fmt.Errorf("sync: rate limit: %w", err)
 			}
-			if err := waitForDelay(groupCtx, workerDelayFn(e.config.Jitter.Worker)); err != nil {
+			if err := e.wait(groupCtx, e.delay(e.config.Jitter.Worker)); err != nil {
 				return fmt.Errorf("sync: worker jitter: %w", err)
 			}
 			e.processTrack(groupCtx, track, c)
@@ -170,6 +186,9 @@ func (e *Engine) downloadAll(ctx context.Context, tracks []tidal.Track, c *count
 
 	if err := group.Wait(); err != nil {
 		return fmt.Errorf("sync: download workers: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("sync: cancelled: %w", err)
 	}
 
 	return nil

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -57,7 +59,7 @@ var errOnceOnly = errors.New("sync runs a single cycle; use the daemon command f
 
 // newSyncCmd builds the `sync` subcommand that runs one full synchronization
 // cycle guarded by a cross-process file lock and exits.
-func newSyncCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.Command {
+func newSyncCmd(configPath *string, verbose *bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync TIDAL library to local storage",
@@ -75,7 +77,7 @@ func newSyncCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.Co
 				return fmt.Errorf("sync: read --%s flag: %w", retryFailedFlag, err)
 			}
 
-			return runSync(cmd.Context(), *configPath, *verbose, *lg, retryFailed)
+			return runSync(cmd.Context(), *configPath, *verbose, os.Stderr, retryFailed)
 		},
 	}
 	cmd.Flags().Bool(onceFlag, true, "run a single sync cycle and exit")
@@ -89,13 +91,13 @@ func newSyncCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.Co
 // is reported as a friendly, non-fatal condition: the run exits non-zero without
 // touching the network. The lock is held for the whole cycle and released on
 // return.
-func runSync(ctx context.Context, configPath string, verbose bool, logger zerolog.Logger, retryFailed bool) error {
+func runSync(ctx context.Context, configPath string, verbose bool, out io.Writer, retryFailed bool) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("sync: %w", err)
 	}
 
-	logger, err = leveledLogger(logger, cfg.Log.Level, verbose)
+	logger, err := buildLogger(out, cfg.Log.Format, cfg.Log.Level, verbose)
 	if err != nil {
 		return fmt.Errorf("sync: %w", err)
 	}
@@ -142,7 +144,7 @@ func executeSync(ctx context.Context, cfg config.Config, st *store.Store, logger
 
 	engine := synceng.NewEngine(synceng.Params{
 		Client:      tidalClient,
-		Downloader:  synceng.NewDownloader(synceng.NewPlaybackProvider(tidalClient), httpClient),
+		Downloader:  synceng.NewDownloader(synceng.NewPlaybackProvider(tidalClient), httpClient, cfg.Quality),
 		Covers:      synceng.NewCoverFetcher(httpClient),
 		Store:       st,
 		Config:      cfg,
@@ -157,11 +159,18 @@ func executeSync(ctx context.Context, cfg config.Config, st *store.Store, logger
 	}
 
 	remover := synceng.NewRemover(synceng.RemoverParams{Store: st, Config: cfg, Logger: logger})
-	if err = remover.Reconcile(ctx, current); err != nil {
+	pending, err := remover.Reconcile(ctx, current)
+	if err != nil {
 		return fmt.Errorf("sync: reconcile removals: %w", err)
 	}
 
-	if err = st.ReplaceSnapshot(ctx, synceng.SnapshotKindTracks, current); err != nil {
+	// Retain tracks whose removal failed this run so the next DiffSnapshot re-lists
+	// them and retries; advancing the snapshot past them would orphan the file.
+	snapshot := current
+	for _, id := range pending {
+		snapshot = append(snapshot, store.SnapshotItem{TidalID: id, Name: "", AddedAt: ""})
+	}
+	if err = st.ReplaceSnapshot(ctx, synceng.SnapshotKindTracks, snapshot); err != nil {
 		return fmt.Errorf("sync: refresh snapshot: %w", err)
 	}
 

@@ -263,7 +263,7 @@ func TestSyncRemovesUnfavoritedTrack(t *testing.T) {
 	}
 
 	remover := synceng.NewRemover(synceng.RemoverParams{Store: st, Config: cfg, Logger: zerolog.Nop()})
-	if err = remover.Reconcile(ctx, current); err != nil {
+	if _, err = remover.Reconcile(ctx, current); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 	if err = st.ReplaceSnapshot(ctx, "tracks", current); err != nil {

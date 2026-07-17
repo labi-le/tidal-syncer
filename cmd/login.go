@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 
-	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 
 	"github.com/labi-le/tidal-syncer/internal/authstore"
@@ -16,12 +17,12 @@ import (
 
 // newLoginCmd builds the `login` subcommand that runs the TIDAL device
 // authorization flow and persists the resulting token through the store.
-func newLoginCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.Command {
+func newLoginCmd(configPath *string, verbose *bool) *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate with TIDAL",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runLogin(cmd.Context(), *configPath, *verbose, *lg)
+			return runLogin(cmd.Context(), *configPath, *verbose, os.Stderr)
 		},
 	}
 }
@@ -30,13 +31,13 @@ func newLoginCmd(configPath *string, verbose *bool, lg *zerolog.Logger) *cobra.C
 // the device authorization grant to completion. PollToken persists the token
 // through the authstore adapter on success. opts customize the auth client; the
 // test suite injects a mock base URL and clock through them.
-func runLogin(ctx context.Context, configPath string, verbose bool, lg zerolog.Logger, opts ...auth.Option) error {
+func runLogin(ctx context.Context, configPath string, verbose bool, out io.Writer, opts ...auth.Option) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("login: %w", err)
 	}
 
-	lg, err = leveledLogger(lg, cfg.Log.Level, verbose)
+	lg, err := buildLogger(out, cfg.Log.Format, cfg.Log.Level, verbose)
 	if err != nil {
 		return fmt.Errorf("login: %w", err)
 	}

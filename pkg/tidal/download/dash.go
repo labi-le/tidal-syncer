@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -15,15 +16,18 @@ import (
 // track is failed on a persistent network error.
 const segmentAttempts = 3
 
-// demuxDASH fetches the ordered DASH segment URLs into a scratch container,
-// demuxes that container to FLAC with ffmpeg, and writes the FLAC into dst (the
-// open part file). The scratch file is always removed.
+// demuxDASH fetches the ordered DASH segment URLs into a scratch container on
+// dst's own volume (so a large fragmented-MP4 never exhausts a small $TMPDIR and
+// a no-space error is correctly attributed to the destination), demuxes that
+// container to FLAC with ffmpeg, and writes the FLAC into dst (the open part
+// file). The scratch carries the part suffix and is removed on every normal path;
+// a hard-crash orphan is reaped by SweepStale.
 func (d *Downloader) demuxDASH(ctx context.Context, urls []string, dst *os.File) error {
 	if d.ffmpegPath == "" {
 		return fmt.Errorf("download: dash needs ffmpeg, none configured: %w", ErrFFmpeg)
 	}
 
-	scratch, err := os.CreateTemp("", "tidal-dash-*.mp4")
+	scratch, err := os.CreateTemp(filepath.Dir(dst.Name()), ".tidal-dash-*"+PartSuffix)
 	if err != nil {
 		return fmt.Errorf("download: create dash scratch file: %w", err)
 	}

@@ -91,6 +91,11 @@ func (d mpdDocument) toDASH() (DASH, error) {
 		return DASH{}, fmt.Errorf("manifest: dash segment template incomplete: %w", ErrInvalidManifest)
 	}
 
+	segmentCount := tmpl.Timeline.totalSegments()
+	if segmentCount == 0 {
+		return DASH{}, fmt.Errorf("manifest: dash timeline has no media segments: %w", ErrInvalidManifest)
+	}
+
 	startNumber := defaultStartNumber
 	if tmpl.StartNumber != nil {
 		startNumber = *tmpl.StartNumber
@@ -101,7 +106,7 @@ func (d mpdDocument) toDASH() (DASH, error) {
 		initialization: tmpl.Initialization,
 		media:          tmpl.Media,
 		startNumber:    startNumber,
-		segmentCount:   tmpl.Timeline.totalSegments(),
+		segmentCount:   segmentCount,
 	}, nil
 }
 

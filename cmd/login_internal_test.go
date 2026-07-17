@@ -19,8 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rs/zerolog"
-
 	"github.com/labi-le/tidal-syncer/internal/authstore"
 	"github.com/labi-le/tidal-syncer/internal/store"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/auth"
@@ -123,9 +121,8 @@ func TestRunLoginPersistsTokenAndLogsLink(t *testing.T) {
 	baseURL := startMockOAuth(t, http.StatusOK, tokenSuccessBody)
 
 	var buf bytes.Buffer
-	lg := zerolog.New(&buf)
 
-	err := runLogin(t.Context(), cfgPath, false, lg,
+	err := runLogin(t.Context(), cfgPath, false, &buf,
 		auth.WithBaseURL(baseURL),
 		auth.WithClock(loginFixedClock),
 	)
@@ -148,9 +145,8 @@ func TestRunLoginDeadCredentialsReturnsGuidance(t *testing.T) {
 	baseURL := startMockOAuth(t, http.StatusUnauthorized, invalidClientBody)
 
 	var buf bytes.Buffer
-	lg := zerolog.New(&buf)
 
-	err := runLogin(t.Context(), cfgPath, false, lg,
+	err := runLogin(t.Context(), cfgPath, false, &buf,
 		auth.WithBaseURL(baseURL),
 		auth.WithClock(loginFixedClock),
 	)
@@ -166,9 +162,8 @@ func TestRunLoginMissingConfigFails(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	lg := zerolog.New(&buf)
 
-	err := runLogin(t.Context(), filepath.Join(t.TempDir(), "nonexistent.yaml"), false, lg)
+	err := runLogin(t.Context(), filepath.Join(t.TempDir(), "nonexistent.yaml"), false, &buf)
 	if err == nil {
 		t.Fatal("expected error for missing config file")
 	}

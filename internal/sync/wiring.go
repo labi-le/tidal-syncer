@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/labi-le/tidal-syncer/internal/config"
 	"github.com/labi-le/tidal-syncer/pkg/tidal"
 	"github.com/labi-le/tidal-syncer/pkg/tidal/download"
 )
@@ -69,12 +70,17 @@ func (f *HTTPCoverFetcher) Cover(ctx context.Context, uuid string) ([]byte, erro
 }
 
 // NewDownloader builds a download.Downloader bound to provider and httpClient,
+// requesting the configured quality tier down to the configured floor and
 // resolving the ffmpeg path from the environment with a bundled fallback.
-func NewDownloader(provider download.PlaybackProvider, httpClient *http.Client) *download.Downloader {
+func NewDownloader(
+	provider download.PlaybackProvider, httpClient *http.Client, quality config.Quality,
+) *download.Downloader {
 	return download.New(
 		provider,
 		httpClient,
 		download.WithFFmpeg(cmp.Or(os.Getenv(ffmpegEnv), defaultFFmpegPath)),
+		download.WithQuality(quality.Request),
+		download.WithFloor(quality.Floor),
 	)
 }
 

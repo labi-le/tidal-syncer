@@ -120,7 +120,12 @@ const (
 	defaultInterval    = 15 * time.Minute
 	defaultConcurrency = 3
 	defaultLogLevel    = "info"
-	defaultLogFormat   = "console"
+	defaultLogFormat   = LogFormatConsole
+
+	// LogFormatConsole selects human-readable console log output; LogFormatJSON
+	// selects structured JSON output. Both are the valid values for log.format.
+	LogFormatConsole = "console"
+	LogFormatJSON    = "json"
 )
 
 // Defaults returns the baseline configuration applied before user overrides.

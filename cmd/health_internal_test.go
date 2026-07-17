@@ -13,8 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/rs/zerolog"
 )
 
 const healthConfigFileMode os.FileMode = 0o600
@@ -40,9 +38,8 @@ func TestRunHealthSucceedsOnWritableDataDir(t *testing.T) {
 	cfgPath := writeHealthConfig(t, dataDir)
 
 	var buf bytes.Buffer
-	lg := zerolog.New(&buf)
 
-	if err := runHealth(t.Context(), cfgPath, false, lg); err != nil {
+	if err := runHealth(t.Context(), cfgPath, false, &buf); err != nil {
 		t.Fatalf("runHealth: %v", err)
 	}
 
@@ -55,9 +52,8 @@ func TestRunHealthFailsOnMissingConfig(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	lg := zerolog.New(&buf)
 
-	err := runHealth(t.Context(), filepath.Join(t.TempDir(), "nonexistent.yaml"), false, lg)
+	err := runHealth(t.Context(), filepath.Join(t.TempDir(), "nonexistent.yaml"), false, &buf)
 	if err == nil {
 		t.Fatal("expected error for missing config file")
 	}
@@ -78,9 +74,8 @@ func TestRunHealthFailsOnUnopenableStore(t *testing.T) {
 	cfgPath := writeHealthConfig(t, bogus)
 
 	var buf bytes.Buffer
-	lg := zerolog.New(&buf)
 
-	if err := runHealth(t.Context(), cfgPath, false, lg); err == nil {
+	if err := runHealth(t.Context(), cfgPath, false, &buf); err == nil {
 		t.Fatal("expected error when data path is not a directory")
 	}
 }
@@ -100,9 +95,8 @@ func TestRunSelfcheckLogsBanner(t *testing.T) {
 	cfgPath := writeHealthConfig(t, t.TempDir())
 
 	var buf bytes.Buffer
-	lg := zerolog.New(&buf)
 
-	if err = runSelfcheck(t.Context(), cfgPath, echoPath, false, lg); err != nil {
+	if err = runSelfcheck(t.Context(), cfgPath, echoPath, false, &buf); err != nil {
 		t.Fatalf("runSelfcheck: %v", err)
 	}
 
@@ -125,9 +119,8 @@ func TestRunSelfcheckFailsOnMissingBinary(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
 
 	var buf bytes.Buffer
-	lg := zerolog.New(&buf)
 
-	err := runSelfcheck(t.Context(), cfgPath, missing, false, lg)
+	err := runSelfcheck(t.Context(), cfgPath, missing, false, &buf)
 	if err == nil {
 		t.Fatal("expected error for missing ffmpeg binary")
 	}
@@ -140,9 +133,8 @@ func TestRunSelfcheckFailsOnMissingConfig(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	lg := zerolog.New(&buf)
 
-	err := runSelfcheck(t.Context(), filepath.Join(t.TempDir(), "nope.yaml"), "/bin/echo", false, lg)
+	err := runSelfcheck(t.Context(), filepath.Join(t.TempDir(), "nope.yaml"), "/bin/echo", false, &buf)
 	if err == nil {
 		t.Fatal("expected error for missing config")
 	}

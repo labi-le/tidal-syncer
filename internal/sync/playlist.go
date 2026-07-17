@@ -67,34 +67,69 @@ func (w *PlaylistWriter) WritePlaylists(ctx context.Context) error {
 		return fmt.Errorf("create playlists directory: %w", err)
 	}
 
+	kept := map[string]struct{}{favoritesPlaylistName: {}}
 	for playlist, iterErr := range w.client.FavoritePlaylists(ctx) {
 		if iterErr != nil {
 			return fmt.Errorf("enumerate favorite playlists: %w", iterErr)
 		}
-		if err := w.writeOne(ctx, log, dir, playlist); err != nil {
+		stem, err := w.writeOne(ctx, log, dir, playlist)
+		if err != nil {
 			return err
 		}
+		kept[stem] = struct{}{}
 	}
+	w.pruneOrphans(log, dir, kept)
 
 	return nil
 }
 
-// writeOne renders playlist into a single .m3u8 file inside dir.
+// pruneOrphans deletes *.m3u8 files directly under dir whose stem is not in kept,
+// removing exports for playlists no longer favorited or since renamed. The kept
+// set includes the favorites-export stem so that sibling writer's file is never
+// touched. It is best-effort: a directory-read or per-file removal error is
+// logged and the prune continues, and it never descends below dir.
+func (w *PlaylistWriter) pruneOrphans(log zerolog.Logger, dir string, kept map[string]struct{}) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		log.Warn().Err(err).Str("dir", dir).Msg("prune orphan playlists: read directory")
+
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != playlistExt {
+			continue
+		}
+		if _, ok := kept[strings.TrimSuffix(entry.Name(), playlistExt)]; ok {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		if rmErr := os.Remove(path); rmErr != nil {
+			log.Warn().Err(rmErr).Str("path", path).Msg("prune orphan playlist")
+
+			continue
+		}
+		log.Info().Str("path", path).Msg("removed orphan playlist export")
+	}
+}
+
+// writeOne renders playlist into a single .m3u8 file inside dir, returning the
+// file's stem (the sanitized title, without extension) so the caller can retain
+// it when pruning orphaned exports.
 func (w *PlaylistWriter) writeOne(
 	ctx context.Context, log zerolog.Logger, dir string, playlist tidal.Playlist,
-) error {
+) (string, error) {
 	entries, err := w.entries(ctx, dir, playlist)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	dest := filepath.Join(dir, namer.Sanitize(playlist.Title)+playlistExt)
-	if err = writeM3U8(dest, entries); err != nil {
-		return err
+	stem := namer.Sanitize(playlist.Title)
+	if err = writeM3U8(filepath.Join(dir, stem+playlistExt), entries); err != nil {
+		return "", err
 	}
 	log.Debug().Str("playlist", playlist.Title).Int("tracks", len(entries)).Msg("playlist written")
 
-	return nil
+	return stem, nil
 }
 
 // playlistEntry is one resolved track in an exported playlist: the metadata for

@@ -28,8 +28,8 @@ scope:
 
 # Audio quality selection.
 quality:
-  # Preferred quality requested from TIDAL.
-  # One of: LOW, HIGH, LOSSLESS, HI_RES_LOSSLESS.
+  # Preferred quality requested from TIDAL; also the ceiling actually requested.
+  # Must be a lossless tier at or above the floor: LOSSLESS or HI_RES_LOSSLESS.
   request: HI_RES_LOSSLESS
   # Minimum acceptable quality. Must be a lossless tier:
   # one of LOSSLESS, HI_RES_LOSSLESS. Lossy floors are rejected.

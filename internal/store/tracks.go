@@ -57,6 +57,31 @@ func (s *Store) MarkTrack(ctx context.Context, tr Track) error {
 	return nil
 }
 
+// MarkFailed records a failed download while preserving any path, obtained
+// quality and genre already stored for the track: a track that previously
+// completed keeps its path->file mapping, so the removal reconciler can still
+// delete the file and the favorites playlist still lists it, while its status
+// flips to failed. On a first-ever record those preserved columns are empty,
+// matching a track with no file. Status, permanent, requested_quality and
+// updated_at are updated.
+func (s *Store) MarkFailed(ctx context.Context, tr Track) error {
+	const q = `INSERT INTO tracks
+		(tidal_id, isrc, album_id, path, obtained_quality, requested_quality, genre, status, permanent, updated_at)
+		VALUES (?, ?, ?, '', '', ?, '', ?, ?, unixepoch())
+		ON CONFLICT(tidal_id) DO UPDATE SET
+			requested_quality = excluded.requested_quality,
+			status            = excluded.status,
+			permanent         = excluded.permanent,
+			updated_at        = excluded.updated_at`
+	if _, err := s.db.ExecContext(ctx, q,
+		tr.TidalID, tr.ISRC, tr.AlbumID, tr.RequestedQuality, string(tr.Status), tr.Permanent,
+	); err != nil {
+		return fmt.Errorf("mark track %q failed: %w", tr.TidalID, err)
+	}
+
+	return nil
+}
+
 // GetTrack returns the cached state for the track with the given TIDAL id, or
 // ErrNotFound if it is absent.
 func (s *Store) GetTrack(ctx context.Context, tidalID string) (Track, error) {

@@ -179,3 +179,42 @@ func Test_Store_Snapshot_isolated_by_kind(t *testing.T) {
 		t.Errorf("removed: got %v want [shared]", removed)
 	}
 }
+
+func Test_Store_OrderedFavoriteFiles_keeps_failed_track_with_preserved_path(t *testing.T) {
+	// Given a dated favorite that downloaded once (file on disk) and then had a
+	// failed re-download attempt, so its status is failed but its path is preserved.
+	ctx := context.Background()
+	st := newStore(t)
+	const kind = "tracks"
+	if err := st.ReplaceSnapshot(ctx, kind, []store.SnapshotItem{
+		{TidalID: "9", Name: "Kept", AddedAt: "2026-06-10T00:00:00.000+0000"},
+	}); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	if err := st.MarkTrack(ctx, store.Track{
+		TidalID: "9", Path: "/music/Artist/Album/09 - Kept.flac",
+		ObtainedQuality: "LOSSLESS", RequestedQuality: "LOSSLESS", Status: store.StatusDone,
+	}); err != nil {
+		t.Fatalf("mark done: %v", err)
+	}
+	if err := st.MarkFailed(ctx, store.Track{
+		TidalID: "9", RequestedQuality: "HI_RES_LOSSLESS", Status: store.StatusFailed,
+	}); err != nil {
+		t.Fatalf("mark failed: %v", err)
+	}
+
+	// When reading the favorite files
+	got, err := st.OrderedFavoriteFiles(ctx, kind)
+	if err != nil {
+		t.Fatalf("ordered favorite files: %v", err)
+	}
+
+	// Then the still-on-disk favorite is listed despite the failed re-download,
+	// keyed off the preserved path rather than the download status.
+	want := []store.FavoriteFile{
+		{Title: "Kept", Path: "/music/Artist/Album/09 - Kept.flac", AddedAt: "2026-06-10T00:00:00.000+0000"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ordered favorite files:\n got %+v\nwant %+v", got, want)
+	}
+}

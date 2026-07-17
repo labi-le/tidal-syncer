@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"syscall"
 
 	"github.com/labi-le/tidal-syncer/pkg/tidal"
@@ -34,6 +35,20 @@ const PartSuffix = ".part"
 // renamed into the final FLAC. 0o644 keeps the music library world-readable for
 // the host user and media servers regardless of the container UID.
 const tempFileMode = 0o644
+
+// streamAttempts is how many times a BTS stream URL is fetched before the track
+// is failed on a persistent network error; it mirrors dash.go's segmentAttempts.
+const streamAttempts = 3
+
+// maxComponentBytes is NAME_MAX on common filesystems (ext4/APFS/NTFS): a single
+// path component may not exceed 255 bytes, so the staged part file (a sibling of
+// the destination) must also fit.
+const maxComponentBytes = 255
+
+// partNameOverhead reserves room for the leading dot, the separator, os.CreateTemp's
+// random field and PartSuffix, so a staged part name stays within maxComponentBytes
+// even when the destination basename is already at the limit.
+const partNameOverhead = 24
 
 // Playback is the resolved playback manifest descriptor for a track: the
 // manifest's MIME type, its base64-encoded body, and the audio quality TIDAL
@@ -70,6 +85,8 @@ type Downloader struct {
 	provider   PlaybackProvider
 	httpClient *http.Client
 	ffmpegPath string
+	request    tidal.Quality
+	floor      tidal.Quality
 }
 
 // Option customizes a Downloader at construction time.
@@ -83,7 +100,13 @@ func New(provider PlaybackProvider, httpClient *http.Client, opts ...Option) *Do
 		httpClient = http.DefaultClient
 	}
 
-	downloader := &Downloader{provider: provider, httpClient: httpClient, ffmpegPath: ""}
+	downloader := &Downloader{
+		provider:   provider,
+		httpClient: httpClient,
+		ffmpegPath: "",
+		request:    tidal.QualityHiResLossless,
+		floor:      tidal.QualityLossless,
+	}
 	for _, opt := range opts {
 		opt(downloader)
 	}
@@ -97,9 +120,24 @@ func WithFFmpeg(path string) Option {
 	return func(d *Downloader) { d.ffmpegPath = path }
 }
 
+// WithQuality sets the highest tier the downloader requests. It tries tiers from
+// this request down to the floor (highest first) and never requests a tier above
+// it. Defaults to HI_RES_LOSSLESS.
+func WithQuality(request tidal.Quality) Option {
+	return func(d *Downloader) { d.request = request }
+}
+
+// WithFloor sets the lowest tier the downloader accepts: a granted tier ranking
+// below the floor is rejected with [ErrBelowFloor] and nothing is written.
+// Defaults to LOSSLESS (the lossless floor).
+func WithFloor(floor tidal.Quality) Option {
+	return func(d *Downloader) { d.floor = floor }
+}
+
 // Download fetches trackID to destPath and reports the audio quality actually
-// obtained. It requests HI_RES_LOSSLESS and falls back to the LOSSLESS floor
-// only when the higher tier is unavailable; it never downloads lossy audio.
+// obtained. It requests the configured tier (see [WithQuality]) and descends to
+// the configured floor (see [WithFloor]) when a higher tier is unavailable; it
+// never writes a tier below the floor.
 //
 // The track is written atomically through a sibling "<destPath>.part" file on
 // destPath's own volume: stream bytes are flushed with fsync and the temporary
@@ -159,15 +197,20 @@ func (d *Downloader) producerFor(
 	}
 }
 
-// fetchManifest resolves the playback manifest for trackID, trying the quality
-// ladder highest-first and returning the first tier TIDAL grants at or above the
-// lossless floor. It descends the ladder when a tier is unavailable, rejects a
-// granted tier below the floor with [ErrBelowFloor] (TIDAL answers HTTP 200 with
-// a lossy stream when an account lacks lossless), and aborts if ctx is cancelled.
+// fetchManifest resolves the playback manifest for trackID, trying the
+// configured quality band highest-first and returning the first tier TIDAL
+// grants at or above the floor. It descends the band when a tier is unavailable,
+// rejects a granted tier below the floor with [ErrBelowFloor] (TIDAL answers
+// HTTP 200 with a lossy stream when an account lacks lossless), and aborts if ctx
+// is cancelled.
 func (d *Downloader) fetchManifest(ctx context.Context, trackID string) (Playback, error) {
 	var lastErr error
 	var subFloor tidal.Quality
+	var sawSubFloor bool
 	for _, quality := range [...]tidal.Quality{tidal.QualityHiResLossless, tidal.QualityLossless} {
+		if quality.Rank() > d.request.Rank() || quality.Rank() < d.floor.Rank() {
+			continue
+		}
 		playback, err := d.provider.PlaybackInfo(ctx, trackID, quality)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -177,32 +220,44 @@ func (d *Downloader) fetchManifest(ctx context.Context, trackID string) (Playbac
 
 			continue
 		}
-		if playback.GrantedQuality.MeetsLosslessFloor() {
+		if playback.GrantedQuality.Rank() >= d.floor.Rank() {
 			return playback, nil
 		}
 		subFloor = playback.GrantedQuality
+		sawSubFloor = true
 	}
 
-	if subFloor != "" {
+	if sawSubFloor {
 		return Playback{}, fmt.Errorf(
-			"download: track %q: granted quality %q is below floor %q; account may not support lossless: %w",
-			trackID, subFloor, tidal.QualityLossless, ErrBelowFloor)
+			"download: track %q: granted quality %q is below floor %q; account may not support it: %w",
+			trackID, subFloor, d.floor, ErrBelowFloor)
+	}
+	if lastErr != nil {
+		return Playback{}, fmt.Errorf("download: no available quality for track %q: %w", trackID, lastErr)
 	}
 
-	return Playback{}, fmt.Errorf("download: no available quality for track %q: %w", trackID, lastErr)
+	return Playback{}, fmt.Errorf("download: no manifest for track %q: %w", trackID, ErrBelowFloor)
 }
 
-// writeAtomic opens a temporary "<destPath>.part" file on destPath's own
-// volume, lets produce fill it, fsyncs it, and renames it into place. The
-// temporary file is removed on any error, so destPath is only ever created from
-// a complete download.
+// writeAtomic stages the download through a unique temporary file on destPath's
+// own volume, lets produce fill it, fsyncs it, renames it into place, and fsyncs
+// the destination directory so the rename is crash-durable. The temporary file
+// is unique per call, so concurrent writers targeting the same destPath never
+// share a part file, and it carries the [PartSuffix] so [SweepStale] reaps it if
+// a run is interrupted; it is removed on any error, so destPath is only ever
+// created from a complete download.
 func (d *Downloader) writeAtomic(destPath string, produce func(part *os.File) error) error {
-	partPath := destPath + PartSuffix
+	dir := filepath.Dir(destPath)
 
-	part, err := os.OpenFile(partPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, tempFileMode)
-	if err != nil {
-		return fmt.Errorf("download: create part file %q: %w", partPath, err)
+	base := filepath.Base(destPath)
+	if limit := maxComponentBytes - partNameOverhead; len(base) > limit {
+		base = base[:limit]
 	}
+	part, err := os.CreateTemp(dir, "."+base+".*"+PartSuffix)
+	if err != nil {
+		return fmt.Errorf("download: create part file in %q: %w", dir, err)
+	}
+	partPath := part.Name()
 
 	committed := false
 	defer func() {
@@ -211,6 +266,10 @@ func (d *Downloader) writeAtomic(destPath string, produce func(part *os.File) er
 			_ = os.Remove(partPath)
 		}
 	}()
+
+	if err = part.Chmod(tempFileMode); err != nil {
+		return fmt.Errorf("download: chmod part file %q: %w", partPath, err)
+	}
 
 	if err = produce(part); err != nil {
 		return err
@@ -226,6 +285,30 @@ func (d *Downloader) writeAtomic(destPath string, produce func(part *os.File) er
 
 	committed = true
 
+	if err = syncDir(dir); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// syncDir fsyncs dir so a completed rename survives a crash: the new directory
+// entry is flushed to stable storage. A missing directory is treated as success.
+func syncDir(dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("download: open dir %q: %w", dir, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if err = f.Sync(); err != nil {
+		return classifyIOErr("sync dir "+dir, err)
+	}
+
 	return nil
 }
 
@@ -240,24 +323,17 @@ func (d *Downloader) streamURLs(ctx context.Context, urls []string, dst io.Write
 	return nil
 }
 
-// streamURL performs a single GET and copies the response body into dst. It
-// reports [ErrUnexpectedStatus] for a non-200 response, the context error on
-// cancellation, and [ErrDiskFull] when the destination volume is full.
+// streamURL fetches rawURL into dst, retrying a persistent transport error or
+// non-200 response up to streamAttempts times before failing. A cancelled
+// context aborts immediately. The body is copied to dst only after a 200
+// response is established, and writeAtomic discards the part file on any error,
+// so a retry never publishes a partial or duplicated stream.
 func (d *Downloader) streamURL(ctx context.Context, rawURL string, dst io.Writer) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	resp, err := d.getStream(ctx, rawURL)
 	if err != nil {
-		return fmt.Errorf("download: new request %q: %w", rawURL, err)
-	}
-
-	resp, err := d.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("download: get %q: %w", rawURL, err)
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download: get %q status %d: %w", rawURL, resp.StatusCode, ErrUnexpectedStatus)
-	}
 
 	if _, err = io.Copy(dst, resp.Body); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -268,6 +344,42 @@ func (d *Downloader) streamURL(ctx context.Context, rawURL string, dst io.Writer
 	}
 
 	return nil
+}
+
+// getStream performs a GET with bounded retry, returning the first 200 response;
+// the caller owns resp.Body and must close it. It retries transient transport
+// errors and non-200 statuses up to streamAttempts, aborts immediately on a
+// cancelled context, and reports [ErrUnexpectedStatus] when the last attempt is
+// a non-200 response.
+func (d *Downloader) getStream(ctx context.Context, rawURL string) (*http.Response, error) {
+	var lastErr error
+	for range streamAttempts {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("download: get %q: %w", rawURL, ctxErr)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("download: new request %q: %w", rawURL, err)
+		}
+
+		resp, err := d.httpClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("download: get %q: %w", rawURL, err)
+
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			_ = resp.Body.Close()
+			lastErr = fmt.Errorf("download: get %q status %d: %w", rawURL, resp.StatusCode, ErrUnexpectedStatus)
+
+			continue
+		}
+
+		return resp, nil
+	}
+
+	return nil, lastErr
 }
 
 // classifyIOErr maps a streaming-copy or fsync error to a typed download error.

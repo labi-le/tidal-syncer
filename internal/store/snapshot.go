@@ -76,14 +76,16 @@ type FavoriteFile struct {
 }
 
 // OrderedFavoriteFiles returns every favorite-kind track that carries a
-// favorite-add date and a completed download on disk, most recently favorited
-// first. Tracks reached only via a favorited album or playlist (no add date) and
-// tracks without a finished download (no file) are excluded, so every returned
-// path points at a real file.
+// favorite-add date and a downloaded file on disk, most recently favorited
+// first. Membership keys off a recorded file path, not download status, so a
+// track that downloaded once and later had a failed re-download attempt (its path
+// preserved) stays listed rather than flickering out. Tracks reached only via a
+// favorited album or playlist (no add date) and tracks with no recorded file are
+// excluded, so every returned path points at a real file.
 func (s *Store) OrderedFavoriteFiles(ctx context.Context, kind string) ([]FavoriteFile, error) {
 	const q = `SELECT f.name, t.path, f.added_at ` +
 		`FROM favorites_snapshot f JOIN tracks t ON t.tidal_id = f.tidal_id ` +
-		`WHERE f.kind = ? AND f.added_at <> '' AND t.status = 'done' AND t.path <> '' ` +
+		`WHERE f.kind = ? AND f.added_at <> '' AND t.path <> '' ` +
 		`ORDER BY f.added_at DESC`
 	rows, err := s.db.QueryContext(ctx, q, kind)
 	if err != nil {

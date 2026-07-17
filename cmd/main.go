@@ -4,6 +4,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -22,20 +23,30 @@ type flags struct {
 // errInvalidLogLevel is returned when config log.level is not a recognized zerolog level.
 var errInvalidLogLevel = errors.New("invalid log level")
 
+// logWriter selects the zerolog writer for a config log.format value, wrapping
+// the given sink. "json" yields a raw JSON stream; any other value (validated
+// upstream to "console") yields a human-readable ConsoleWriter. cfg.Log.Format
+// is validated to exactly {"console","json"}, so no error branch is needed here.
+func logWriter(out io.Writer, format string) io.Writer {
+	if format == "json" {
+		return out
+	}
+
+	return zerolog.ConsoleWriter{Out: out, TimeFormat: time.RFC3339} //nolint:exhaustruct // ConsoleWriter has many optional knobs
+}
+
 // initLogger builds the bootstrap zerolog.Logger used before any config file is
 // loaded (e.g. by the version command, which never reads config). Stderr
 // ConsoleWriter; InfoLevel default (TraceLevel if verbose); always Timestamp;
 // .Caller() only when verbose. No global logger is touched. Config-loading
-// subcommands re-derive the level from config.log.level via leveledLogger.
+// subcommands rebuild the final logger from config.log.{format,level} via buildLogger.
 func initLogger(verbose bool) zerolog.Logger {
 	lvl := zerolog.InfoLevel
 	if verbose {
 		lvl = zerolog.TraceLevel
 	}
 
-	cw := zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339} //nolint:exhaustruct // ConsoleWriter has many optional knobs
-
-	ctx := zerolog.New(cw).Level(lvl).With().Timestamp()
+	ctx := zerolog.New(logWriter(os.Stderr, "console")).Level(lvl).With().Timestamp()
 	if verbose {
 		ctx = ctx.Caller()
 	}
@@ -43,17 +54,24 @@ func initLogger(verbose bool) zerolog.Logger {
 	return ctx.Logger()
 }
 
-// leveledLogger returns base re-leveled from the config log.level value. --verbose
-// wins: it forces TraceLevel regardless of config. An unrecognized configLevel is
-// rejected with errInvalidLogLevel. base keeps its Timestamp/Caller context; only
-// the minimum level changes (zerolog loggers are immutable values).
-func leveledLogger(base zerolog.Logger, configLevel string, verbose bool) (zerolog.Logger, error) {
+// buildLogger constructs the final subcommand logger, writing to out with the
+// writer selected by config log.format ("json" -> raw JSON, else ConsoleWriter).
+// The level follows parseLogLevel (--verbose forces TraceLevel, else the config
+// level, else Info); Timestamp is always attached and .Caller() added only when
+// verbose, mirroring initLogger so format is the sole behavioral difference. An
+// unrecognized configLevel is rejected with errInvalidLogLevel.
+func buildLogger(out io.Writer, format, configLevel string, verbose bool) (zerolog.Logger, error) {
 	lvl, err := parseLogLevel(configLevel, verbose)
 	if err != nil {
 		return zerolog.Nop(), err
 	}
 
-	return base.Level(lvl), nil
+	ctx := zerolog.New(logWriter(out, format)).Level(lvl).With().Timestamp()
+	if verbose {
+		ctx = ctx.Caller()
+	}
+
+	return ctx.Logger(), nil
 }
 
 // parseLogLevel resolves the effective zerolog level from the config log.level
@@ -75,15 +93,17 @@ func parseLogLevel(level string, verbose bool) (zerolog.Level, error) {
 	return lvl, nil
 }
 
-// newRootCmd assembles the cobra command tree. The logger is created once in
-// PersistentPreRunE and injected by value into every subcommand RunE closure
-// captured at registration time via the returned *zerolog.Logger pointer.
+// newRootCmd assembles the cobra command tree. The bootstrap logger is created
+// once in PersistentPreRun and injected by pointer into the version subcommand
+// (which reads no config). Config-loading subcommands build their own
+// format-aware logger from config via buildLogger, writing to os.Stderr.
 func newRootCmd() *cobra.Command {
 	f := &flags{} //nolint:exhaustruct // zero values are the intended defaults
 
-	// loggerHolder is set by PersistentPreRunE and read by subcommands.
-	// Pointer indirection keeps zero global state while letting child RunE
-	// closures resolve the logger at call time (after flag parsing).
+	// loggerHolder is set by PersistentPreRun and read only by the version
+	// subcommand (the sole command that logs without loading config). Pointer
+	// indirection keeps zero global state while letting its RunE resolve the
+	// logger at call time (after flag parsing).
 	var loggerHolder zerolog.Logger
 
 	root := &cobra.Command{
@@ -101,11 +121,11 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().BoolVar(&f.verbose, "verbose", false, "verbose mode (Trace level + caller)")
 
 	root.AddCommand(newVersionCmd(&loggerHolder))
-	root.AddCommand(newLoginCmd(&f.configPath, &f.verbose, &loggerHolder))
-	root.AddCommand(newSyncCmd(&f.configPath, &f.verbose, &loggerHolder))
-	root.AddCommand(newDaemonCmd(&f.configPath, &f.verbose, &loggerHolder))
-	root.AddCommand(newHealthCmd(&f.configPath, &f.verbose, &loggerHolder))
-	root.AddCommand(newSelfcheckCmd(&f.configPath, &f.verbose, &loggerHolder))
+	root.AddCommand(newLoginCmd(&f.configPath, &f.verbose))
+	root.AddCommand(newSyncCmd(&f.configPath, &f.verbose))
+	root.AddCommand(newDaemonCmd(&f.configPath, &f.verbose))
+	root.AddCommand(newHealthCmd(&f.configPath, &f.verbose))
+	root.AddCommand(newSelfcheckCmd(&f.configPath, &f.verbose))
 
 	return root
 }

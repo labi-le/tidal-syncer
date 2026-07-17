@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -33,7 +34,7 @@ func TestRemovalKeep(t *testing.T) {
 	seedRemovalBaseline(t, st, removedTrackID, keptTrackID)
 
 	// When reconciling with the track no longer favorited
-	if err := newRemover(st, music, "keep").Reconcile(ctx, snapshotItems(keptTrackID)); err != nil {
+	if _, err := newRemover(st, music, "keep").Reconcile(ctx, snapshotItems(keptTrackID)); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 
@@ -54,7 +55,7 @@ func TestRemovalMirror(t *testing.T) {
 	seedRemovalBaseline(t, st, removedTrackID, keptTrackID)
 
 	// When reconciling under the mirror policy with the track unfavorited
-	if err := newRemover(st, music, "mirror").Reconcile(ctx, snapshotItems(keptTrackID)); err != nil {
+	if _, err := newRemover(st, music, "mirror").Reconcile(ctx, snapshotItems(keptTrackID)); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 
@@ -79,7 +80,7 @@ func TestRemovalTrash(t *testing.T) {
 	seedRemovalBaseline(t, st, removedTrackID, keptTrackID)
 
 	// When reconciling under the trash policy with the track unfavorited
-	if err := newRemover(st, music, "trash").Reconcile(ctx, snapshotItems(keptTrackID)); err != nil {
+	if _, err := newRemover(st, music, "trash").Reconcile(ctx, snapshotItems(keptTrackID)); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 
@@ -100,7 +101,7 @@ func TestRemovalFirstRunEmptySnapshot(t *testing.T) {
 	markRemovalTrack(t, st, audio)
 
 	// When reconciling under the destructive mirror policy with no baseline
-	if err := newRemover(st, music, "mirror").Reconcile(ctx, snapshotItems(removedTrackID)); err != nil {
+	if _, err := newRemover(st, music, "mirror").Reconcile(ctx, snapshotItems(removedTrackID)); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 
@@ -119,12 +120,80 @@ func TestRemovalSandbox(t *testing.T) {
 	seedRemovalBaseline(t, st, removedTrackID, keptTrackID)
 
 	// When reconciling under mirror with that track unfavorited
-	if err := newRemover(st, music, "mirror").Reconcile(ctx, snapshotItems(keptTrackID)); err != nil {
+	if _, err := newRemover(st, music, "mirror").Reconcile(ctx, snapshotItems(keptTrackID)); err != nil {
 		t.Fatalf("reconcile: %v", err)
 	}
 
 	// Then the out-of-tree file is never touched
 	requireExists(t, outside)
+}
+
+// TestRemovalContinuesPastPerTrackFailure verifies a per-track filesystem
+// failure (an un-removable file) is logged and skipped rather than aborting the
+// pass: Reconcile returns nil and every other unfavorited track is still
+// processed.
+func TestRemovalContinuesPastPerTrackFailure(t *testing.T) {
+	// Given two unfavorited tracks, one whose parent dir is read-only so its
+	// file cannot be deleted, and one in a writable dir
+	ctx := context.Background()
+	st := newTestStore(t)
+	music := t.TempDir()
+	badDir := filepath.Join(music, "Bad", "Album")
+	badAudio := filepath.Join(badDir, "track.flac")
+	goodAudio := filepath.Join(music, "Good", "Album", "track.flac")
+	writeRemovalFile(t, badAudio)
+	writeRemovalFile(t, goodAudio)
+	markRemovalTrackID(t, st, "bad-1", badAudio)
+	markRemovalTrackID(t, st, "good-1", goodAudio)
+	seedRemovalBaseline(t, st, "bad-1", "good-1", keptTrackID)
+
+	if err := os.Chmod(badDir, 0o500); err != nil {
+		t.Fatalf("chmod bad dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(badDir, removalDirMode) })
+
+	// When reconciling under mirror with both tracks unfavorited
+	pending, err := newRemover(st, music, "mirror").Reconcile(ctx, snapshotItems(keptTrackID))
+	if err != nil {
+		t.Fatalf("reconcile must tolerate a per-track FS failure: %v", err)
+	}
+
+	// Then the failing track survives while the good one is still removed, and the
+	// un-removable track is returned as pending so the caller retains it for retry.
+	requireExists(t, badAudio)
+	requireAbsent(t, goodAudio)
+	if !slices.Contains(pending, "bad-1") {
+		t.Fatalf("pending = %v, want it to contain un-removable bad-1", pending)
+	}
+	if slices.Contains(pending, "good-1") {
+		t.Fatalf("pending = %v, must not contain removed good-1", pending)
+	}
+}
+
+// TestRemovalStoreErrorAborts verifies a broken store aborts the pass: with the
+// store closed, the snapshot diff fails and Reconcile returns a non-nil error
+// rather than swallowing it like a per-track failure.
+func TestRemovalStoreErrorAborts(t *testing.T) {
+	// Given a seeded baseline and a track on disk, then a closed (broken) store
+	ctx := context.Background()
+	st := newTestStore(t)
+	music := t.TempDir()
+	audio := filepath.Join(music, "Artist", "Album", "track.flac")
+	writeRemovalFile(t, audio)
+	markRemovalTrack(t, st, audio)
+	seedRemovalBaseline(t, st, removedTrackID, keptTrackID)
+	if err := st.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	// When reconciling against the broken store
+	_, err := newRemover(st, music, "mirror").Reconcile(ctx, snapshotItems(keptTrackID))
+
+	// Then the pass aborts with an error and leaves the file untouched
+	if err == nil {
+		t.Fatal("reconcile must abort on a store error, got nil")
+	}
+	requireExists(t, audio)
 }
 
 // newRemover builds a Remover over st rooted at music with the given policy.
@@ -174,6 +243,21 @@ func markRemovalTrack(t *testing.T, st *store.Store, path string) {
 	}
 	if err := st.MarkTrack(context.Background(), rec); err != nil {
 		t.Fatalf("mark track %q: %v", removedTrackID, err)
+	}
+}
+
+// markRemovalTrackID records id as a done track at path in the store.
+func markRemovalTrackID(t *testing.T, st *store.Store, id, path string) {
+	t.Helper()
+
+	rec := store.Track{
+		TidalID:         id,
+		Path:            path,
+		ObtainedQuality: gotQuality,
+		Status:          store.StatusDone,
+	}
+	if err := st.MarkTrack(context.Background(), rec); err != nil {
+		t.Fatalf("mark track %q: %v", id, err)
 	}
 }
 

@@ -265,10 +265,16 @@ func (e *Engine) markDone(
 }
 
 // markFailed counts and records a failed track, logging but never propagating a
-// secondary store error so the run is never aborted by one track.
+// secondary store error so the run is never aborted by one track. A cancellation
+// is not a track failure: it is neither counted nor recorded, so a shutdown
+// mid-run keeps the summary accurate and the track is retried next run.
 func (e *Engine) markFailed(
 	ctx context.Context, log zerolog.Logger, track tidal.Track, cause error, c *counters,
 ) {
+	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+		return
+	}
+
 	permanent := permanentFailure(cause)
 	c.failed.Add(1)
 	log.Error().Err(cause).Int("track", track.ID).Bool("permanent", permanent).Msg("track failed")
@@ -277,14 +283,12 @@ func (e *Engine) markFailed(
 		TidalID:          strconv.Itoa(track.ID),
 		ISRC:             track.ISRC,
 		AlbumID:          strconv.Itoa(track.Album.ID),
-		Path:             "",
-		ObtainedQuality:  "",
 		RequestedQuality: string(e.config.Quality.Request),
 		Status:           store.StatusFailed,
 		Permanent:        permanent,
 		UpdatedAt:        0,
 	}
-	if err := e.store.MarkTrack(ctx, record); err != nil {
+	if err := e.store.MarkFailed(ctx, record); err != nil {
 		log.Error().Err(err).Int("track", track.ID).Msg("record failed state")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"iter"
 	"net/http"
 	"net/http/httptest"
@@ -32,13 +33,12 @@ import (
 func Test_newSyncCmd_uses_sync_name(t *testing.T) {
 	t.Parallel()
 
-	// Given a config path, verbose flag and logger captured by the command closure
+	// Given a config path and verbose flag captured by the command closure
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	verbose := false
-	logger := zerolog.Nop()
 
 	// When the sync command is built
-	cmd := newSyncCmd(&configPath, &verbose, &logger)
+	cmd := newSyncCmd(&configPath, &verbose)
 
 	// Then it is the "sync" verb and is runnable
 	if cmd.Use != "sync" {
@@ -65,7 +65,7 @@ func Test_runSync_reports_friendly_error_when_lock_held(t *testing.T) {
 	defer func() { _ = release() }()
 
 	// When a one-shot sync runs against the same data directory
-	err := runSync(ctx, configPath, false, zerolog.Nop(), false)
+	err := runSync(ctx, configPath, false, io.Discard, false)
 
 	// Then it returns the friendly "already running" sentinel
 	if !errors.Is(err, errAnotherSyncRunning) {
@@ -148,7 +148,7 @@ func Test_sync_wiring_runs_end_to_end_with_mock_playback(t *testing.T) {
 	}
 	engine := synceng.NewEngine(synceng.Params{
 		Client:     &mockTidalClient{userID: "user-1", favTracks: []tidal.Track{wiringTrack()}},
-		Downloader: synceng.NewDownloader(provider, srv.Client()),
+		Downloader: synceng.NewDownloader(provider, srv.Client(), cfg.Quality),
 		Covers:     synceng.NewCoverFetcher(srv.Client()),
 		Store:      st,
 		Config:     cfg,

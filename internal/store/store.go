@@ -16,8 +16,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
-	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
+	"modernc.org/sqlite"             // registers the "sqlite" driver + exposes *sqlite.Error
+	sqlite3 "modernc.org/sqlite/lib" // SQLITE_BUSY result code
 )
 
 //go:embed migrations/*.sql
@@ -66,12 +68,47 @@ func Open(dataDir string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(maxOpenConns)
 
+	// Establish the first connection eagerly so the rollback->WAL conversion
+	// happens here rather than lazily under the migration write lock.
+	if err = establishWAL(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
 	if err = tightenDBFilePerms(dbPath); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 
 	return &Store{db: db, dbPath: dbPath}, nil
+}
+
+// establishWAL forces the first physical connection, applying the DSN pragmas
+// (notably the initial rollback->WAL conversion). That conversion needs a brief
+// exclusive lock and, per SQLite, does NOT invoke the busy handler on a
+// read->write lock upgrade, so busy_timeout cannot cover it: concurrent fresh
+// opens must retry SQLITE_BUSY here until one connection wins the conversion.
+func establishWAL(db *sql.DB) error {
+	const retryDelay = 20 * time.Millisecond
+	deadline := time.Now().Add(busyTimeoutMs * time.Millisecond)
+
+	ctx := context.Background()
+	for {
+		err := db.PingContext(ctx)
+		if err == nil {
+			return nil
+		}
+		if !isBusy(err) || time.Now().After(deadline) {
+			return fmt.Errorf("establish wal connection: %w", err)
+		}
+		time.Sleep(retryDelay)
+	}
+}
+
+// isBusy reports whether err is a SQLITE_BUSY result from the sqlite driver.
+func isBusy(err error) bool {
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.Code() == sqlite3.SQLITE_BUSY
 }
 
 // tightenDBFilePerms forces the SQLite file at dbPath to dbFileMode. Idempotent:
@@ -126,11 +163,13 @@ func (s *Store) ensureMigrationsTable(ctx context.Context) error {
 		version    INTEGER PRIMARY KEY,
 		applied_at TEXT NOT NULL
 	)`
-	if _, err := s.db.ExecContext(ctx, ddl); err != nil {
-		return fmt.Errorf("ensure schema_migrations: %w", err)
-	}
+	return s.withImmediateTx(ctx, func(conn *sql.Conn) error {
+		if _, err := conn.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("ensure schema_migrations: %w", err)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 func (s *Store) applyMigration(ctx context.Context, name string) error {
@@ -139,7 +178,10 @@ func (s *Store) applyMigration(ctx context.Context, name string) error {
 		return err
 	}
 
-	applied, err := s.migrationApplied(ctx, version)
+	// Fast path: an autocommit read avoids taking the write lock for the common
+	// already-applied no-op. The authoritative re-check happens inside the write
+	// transaction below, so a stale "false" here is harmless.
+	applied, err := migrationApplied(ctx, s.db, version)
 	if err != nil {
 		return err
 	}
@@ -155,33 +197,82 @@ func (s *Store) applyMigration(ctx context.Context, name string) error {
 	return s.runMigration(ctx, version, string(ddl))
 }
 
-func (s *Store) migrationApplied(ctx context.Context, version int) (bool, error) {
-	const q = `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = ?)`
+// rowQuerier is the subset of *sql.DB / *sql.Conn used to probe
+// schema_migrations; letting migrationApplied run either as an autocommit read
+// or inside a held write transaction.
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func migrationApplied(ctx context.Context, q rowQuerier, version int) (bool, error) {
+	const query = `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = ?)`
 	var exists bool
-	if err := s.db.QueryRowContext(ctx, q, version).Scan(&exists); err != nil {
+	if err := q.QueryRowContext(ctx, query, version).Scan(&exists); err != nil {
 		return false, fmt.Errorf("check migration %d: %w", version, err)
 	}
 
 	return exists, nil
 }
 
+// runMigration applies a single migration atomically: it re-checks the version
+// and, if still unapplied, runs the DDL and records it inside one write
+// transaction (see withImmediateTx). The re-check inside the lock turns a racer
+// that committed first into a no-op rather than a duplicate-apply error.
 func (s *Store) runMigration(ctx context.Context, version int, ddl string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin migration %d: %w", version, err)
-	}
-	defer func() { _ = tx.Rollback() }()
+	return s.withImmediateTx(ctx, func(conn *sql.Conn) error {
+		applied, err := migrationApplied(ctx, conn, version)
+		if err != nil {
+			return err
+		}
+		if applied {
+			return nil
+		}
 
-	if _, err = tx.ExecContext(ctx, ddl); err != nil {
-		return fmt.Errorf("exec migration %d: %w", version, err)
+		if _, err = conn.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("exec migration %d: %w", version, err)
+		}
+		const record = `INSERT INTO schema_migrations (version, applied_at) VALUES (?, datetime('now'))`
+		if _, err = conn.ExecContext(ctx, record, version); err != nil {
+			return fmt.Errorf("record migration %d: %w", version, err)
+		}
+
+		return nil
+	})
+}
+
+// withImmediateTx runs fn inside a BEGIN IMMEDIATE transaction on one pinned
+// connection, then COMMITs. The write lock is taken up front so a concurrent
+// process (single-writer WAL) blocks on busy_timeout instead of failing with
+// SQLITE_BUSY on a read->write lock upgrade — the busy handler is skipped for
+// upgrades, so a plain autocommit write or a deferred BeginTx would race. fn
+// MUST NOT commit or roll back; returning an error aborts and rolls back.
+func (s *Store) withImmediateTx(ctx context.Context, fn func(conn *sql.Conn) error) error {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration conn: %w", err)
 	}
-	const record = `INSERT INTO schema_migrations (version, applied_at) VALUES (?, datetime('now'))`
-	if _, err = tx.ExecContext(ctx, record, version); err != nil {
-		return fmt.Errorf("record migration %d: %w", version, err)
+	defer func() { _ = conn.Close() }()
+
+	if _, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		return fmt.Errorf("begin immediate: %w", err)
 	}
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("commit migration %d: %w", version, err)
+	committed := false
+	defer func() {
+		if !committed {
+			// Detached context so cleanup runs even if ctx was cancelled; a bare
+			// conn.Close() with an open tx would leak the write lock.
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		}
+	}()
+
+	if err = fn(conn); err != nil {
+		return err
 	}
+
+	if _, err = conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return fmt.Errorf("commit migration tx: %w", err)
+	}
+	committed = true
 
 	return nil
 }

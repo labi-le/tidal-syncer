@@ -49,6 +49,18 @@ func (c Config) Validate() error {
 		[]string{string(tidal.QualityLossless), string(tidal.QualityHiResLossless)}); err != nil {
 		return err
 	}
+	if err := requireOneOf("quality.request", string(c.Quality.Request),
+		[]string{string(tidal.QualityLossless), string(tidal.QualityHiResLossless)}); err != nil {
+		return err
+	}
+	if c.Quality.Floor.Rank() > c.Quality.Request.Rank() {
+		return fmt.Errorf("quality.floor %q must not exceed quality.request %q",
+			c.Quality.Floor, c.Quality.Request)
+	}
+	if err := requireOneOf("log.format", c.Log.Format,
+		[]string{LogFormatConsole, LogFormatJSON}); err != nil {
+		return err
+	}
 	if err := validatePathTemplate(c.PathTemplate); err != nil {
 		return err
 	}

@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/labi-le/tidal-syncer/pkg/tidal"
@@ -47,11 +49,17 @@ type fakeResponse struct {
 // quality-keyed table so tests drive the quality ladder deterministically.
 type fakeProvider struct {
 	responses map[tidal.Quality]fakeResponse
+	// seen, when non-nil, records every quality PlaybackInfo is asked for, in
+	// order, so a test can assert the request ladder honored the configured band.
+	seen *[]tidal.Quality
 }
 
 func (f fakeProvider) PlaybackInfo(
 	_ context.Context, _ string, quality tidal.Quality,
 ) (download.Playback, error) {
+	if f.seen != nil {
+		*f.seen = append(*f.seen, quality)
+	}
 	resp, ok := f.responses[quality]
 	if !ok {
 		return download.Playback{}, errNoSuchQuality
@@ -286,5 +294,112 @@ func TestCancelledContextRemovesPart(t *testing.T) {
 	}
 	if _, statErr := os.Stat(destPath); !errors.Is(statErr, fs.ErrNotExist) {
 		t.Fatalf("dest file must not exist after cancel, stat err = %v", statErr)
+	}
+}
+
+func TestRequestCapsQualityBelowHiRes(t *testing.T) {
+	t.Parallel()
+
+	body := flacBytes()
+	srv := newContentServer(body)
+	defer srv.Close()
+
+	var requested []tidal.Quality
+	provider := fakeProvider{
+		responses: map[tidal.Quality]fakeResponse{
+			qualityHiRes:    {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityHiRes},
+			qualityLossless: {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityLossless},
+		},
+		seen: &requested,
+	}
+	dl := download.New(provider, srv.Client(), download.WithQuality(qualityLossless))
+	destPath := filepath.Join(t.TempDir(), "track.flac")
+
+	quality, err := dl.Download(context.Background(), testTrackID, destPath)
+	if err != nil {
+		t.Fatalf("Download: unexpected error: %v", err)
+	}
+	if quality != qualityLossless {
+		t.Fatalf("obtained quality = %q, want %q (capped by request)", quality, qualityLossless)
+	}
+	if len(requested) != 1 || requested[0] != qualityLossless {
+		t.Fatalf("requested tiers = %v, want exactly [%q] (never HI_RES above the request cap)", requested, qualityLossless)
+	}
+}
+
+func TestFloorRejectsBelowFloorGrant(t *testing.T) {
+	t.Parallel()
+
+	body := flacBytes()
+	srv := newContentServer(body)
+	defer srv.Close()
+
+	// TIDAL grants only LOSSLESS, but the configured floor requires HI_RES.
+	provider := fakeProvider{responses: map[tidal.Quality]fakeResponse{
+		qualityHiRes: {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityLossless},
+	}}
+	dl := download.New(provider, srv.Client(), download.WithFloor(qualityHiRes))
+	destPath := filepath.Join(t.TempDir(), "track.flac")
+
+	quality, err := dl.Download(context.Background(), testTrackID, destPath)
+	if !errors.Is(err, download.ErrBelowFloor) {
+		t.Fatalf("Download error = %v, want errors.Is ErrBelowFloor", err)
+	}
+	if quality != "" {
+		t.Fatalf("obtained quality = %q, want empty when the grant is below the floor", quality)
+	}
+	assertAbsent(t, destPath, "a below-floor grant must never create the destination")
+}
+
+func TestConcurrentSameDestNoCorruption(t *testing.T) {
+	t.Parallel()
+
+	body := flacBytes()
+	srv := newContentServer(body)
+	defer srv.Close()
+
+	provider := fakeProvider{responses: map[tidal.Quality]fakeResponse{
+		qualityHiRes: {mimeType: manifest.MimeBTS, manifestB64: btsManifestB64(t, srv.URL), granted: qualityHiRes},
+	}}
+	dl := download.New(provider, srv.Client())
+	dir := t.TempDir()
+	destPath := filepath.Join(dir, "track.flac")
+
+	const writers = 4
+	var wg sync.WaitGroup
+	errs := make([]error, writers)
+	for i := range writers {
+		wg.Go(func() {
+			_, errs[i] = dl.Download(context.Background(), testTrackID, destPath)
+		})
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent writer %d: %v", i, err)
+		}
+	}
+	got, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("read dest: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("dest content = %d bytes, want one complete copy of %d bytes", len(got), len(body))
+	}
+	assertNoPartFiles(t, dir)
+}
+
+func assertNoPartFiles(t *testing.T, dir string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir %q: %v", dir, err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), download.PartSuffix) {
+			t.Fatalf("stale part file left behind: %q", entry.Name())
+		}
 	}
 }

@@ -6,6 +6,7 @@ package tidal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -85,6 +86,7 @@ func New(tokens TokenSource, opts ...Option) *Client {
 	httpClient.RetryWaitMin = cfg.retryWaitMin
 	httpClient.RetryWaitMax = cfg.retryWaitMax
 	httpClient.Backoff = Backoff
+	httpClient.ErrorHandler = errorHandler
 
 	interval := time.Minute / time.Duration(cfg.requestsPerMinute)
 	return &Client{
@@ -167,6 +169,13 @@ func (c *Client) do(ctx context.Context, r apiRequest) (*http.Response, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		// A retried non-2xx response reaches us as the *APIError built by
+		// errorHandler; return it unwrapped so it is byte-for-byte identical
+		// to the non-retried non-2xx path below.
+		var apiErr *APIError
+		if errors.As(err, &apiErr) {
+			return nil, apiErr
+		}
 		return nil, fmt.Errorf("tidal: %s %s: %w", r.method, r.path, err)
 	}
 

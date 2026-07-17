@@ -24,6 +24,13 @@ const testRPM = 60_000
 // scenario: one rejected request plus one successful retry.
 const wantServerCalls = 2
 
+// retryMaxExhausted drives the persistent-503 scenario; wantExhaustedCalls is
+// the resulting upstream hit count: the initial request plus every retry.
+const (
+	retryMaxExhausted  = 2
+	wantExhaustedCalls = retryMaxExhausted + 1
+)
+
 // staticTokens is a TokenSource test double. It is the ONLY mock seam the
 // package exposes, per the client contract.
 type staticTokens struct {
@@ -251,6 +258,50 @@ func TestClientDo_returnsAPIErrorOnNon2xx(t *testing.T) {
 	}
 	if apiErr.Code != "track_not_found" {
 		t.Errorf("APIError.Code: got %q want %q", apiErr.Code, "track_not_found")
+	}
+}
+
+func TestClientDo_returnsAPIErrorWhenRetriesExhausted(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"code":"service_unavailable"}`)
+	}))
+	defer srv.Close()
+
+	client := tidal.New(
+		staticTokens{access: "t", countryCode: "US", userID: "u"},
+		tidal.WithBaseURL(srv.URL),
+		tidal.WithRequestsPerMinute(testRPM),
+		tidal.WithRetryMax(retryMaxExhausted),
+		tidal.WithRetryWaitMin(time.Millisecond),
+		tidal.WithRetryWaitMax(10*time.Millisecond),
+	)
+
+	resp, err := client.Do(context.Background(), http.MethodGet, "/x", nil)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("Do: want APIError after exhausting retries, got nil")
+	}
+	if resp != nil {
+		t.Fatalf("Do: response must be nil on error, got %v", resp)
+	}
+	if got := calls.Load(); got != wantExhaustedCalls {
+		t.Fatalf("server calls: got %d want %d (initial + retries)", got, wantExhaustedCalls)
+	}
+
+	var apiErr *tidal.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("Do: want *tidal.APIError after exhausted retries, got %v", err)
+	}
+	if apiErr.Status != http.StatusServiceUnavailable {
+		t.Errorf("APIError.Status: got %d want %d", apiErr.Status, http.StatusServiceUnavailable)
+	}
+	if apiErr.Code != "service_unavailable" {
+		t.Errorf("APIError.Code: got %q want %q", apiErr.Code, "service_unavailable")
 	}
 }
 

@@ -73,6 +73,24 @@ func TestRunDaemon_LoopRunsMultipleCycles(t *testing.T) {
 	requireDaemonExit(t, done)
 }
 
+// TestRunDaemon_UnknownModeReturnsError proves an unrecognized daemon mode is
+// rejected with errUnknownDaemonMode instead of silently no-opping (the old
+// two-if form exited 0 without ever running a cycle).
+func TestRunDaemon_UnknownModeReturnsError(t *testing.T) {
+	t.Parallel()
+
+	log := zerolog.Nop()
+	cc := &cycleCounter{reached: make(chan struct{})}
+
+	err := runDaemon(context.Background(), &log, config.Daemon{Mode: "bogus"}, cc.cycle(nil))
+	if !errors.Is(err, errUnknownDaemonMode) {
+		t.Fatalf("runDaemon(mode=bogus) error = %v, want errUnknownDaemonMode", err)
+	}
+	if got := cc.count.Load(); got != 0 {
+		t.Errorf("cycle ran %d times for unknown mode; want 0", got)
+	}
+}
+
 // TestRunDaemon_GracefulExitOnCancel proves a cancelled context makes the daemon
 // return nil promptly: the SIGTERM/SIGINT graceful-shutdown path.
 func TestRunDaemon_GracefulExitOnCancel(t *testing.T) {

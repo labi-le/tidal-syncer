@@ -196,3 +196,43 @@ func assertNoEscape(t *testing.T, music, playlistsDir string, entries []string) 
 		}
 	}
 }
+
+// TestPlaylistWriterPrunesOrphanExports pre-seeds the Playlists directory with a
+// stale export for a no-longer-favorited playlist and the favorites-collection
+// export written by FavoritesWriter, then asserts WritePlaylists writes the
+// current playlist, deletes the orphan, and preserves the favorites export owned
+// by the sibling writer.
+func TestPlaylistWriterPrunesOrphanExports(t *testing.T) {
+	t.Parallel()
+
+	client, cfg := newPlaylistFixture(t)
+	playlistsDir := filepath.Join(cfg.Paths.Music, "Playlists")
+	if err := os.MkdirAll(playlistsDir, removalDirMode); err != nil {
+		t.Fatalf("mkdir playlists dir: %v", err)
+	}
+	orphan := filepath.Join(playlistsDir, "Old Mix.m3u8")
+	favorites := filepath.Join(playlistsDir, "Favorite Tracks.m3u8")
+	seedExport(t, orphan)
+	seedExport(t, favorites)
+
+	writer := synceng.NewPlaylistWriter(client, cfg, zerolog.Nop())
+	if err := writer.WritePlaylists(context.Background()); err != nil {
+		t.Fatalf("WritePlaylists() error = %v, want nil", err)
+	}
+
+	// The current favorite playlist is written.
+	requireExists(t, filepath.Join(playlistsDir, "My Mix.m3u8"))
+	// The orphan export for a no-longer-favorited playlist is pruned.
+	requireAbsent(t, orphan)
+	// The favorites export owned by FavoritesWriter is preserved.
+	requireExists(t, favorites)
+}
+
+// seedExport writes a placeholder .m3u8 file at path for prune tests.
+func seedExport(t *testing.T, path string) {
+	t.Helper()
+
+	if err := os.WriteFile(path, []byte("#EXTM3U\n"), removalFileMode); err != nil {
+		t.Fatalf("seed export %q: %v", path, err)
+	}
+}
