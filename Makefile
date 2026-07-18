@@ -46,7 +46,7 @@ lint:
 	golangci-lint run
 
 docker-build:
-	docker compose build
+	docker compose build --build-arg COMMIT_HASH=$(COMMIT_HASH) --build-arg BUILD_TIME=$(BUILD_TIMESTAMP)
 
 docker-run:
 	docker run --rm -it $(DOCKER_IMAGE)

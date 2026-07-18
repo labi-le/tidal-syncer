@@ -547,7 +547,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "/^version$/"
+          "fields": ""
         },
         "colorMode": "none",
         "textMode": "name"
@@ -556,7 +556,7 @@
         {
           "refId": "A",
           "expr": "tidal_syncer_build_info",
-          "legendFormat": "{{version}}",
+          "legendFormat": "{{version}} · {{commit}}",
           "instant": true,
           "datasource": {
             "type": "prometheus",
