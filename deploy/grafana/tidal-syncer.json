@@ -3,6 +3,7 @@
     "list": []
   },
   "editable": true,
+  "description": "TIDAL library size, sync health, quality mix and top genres from the tidal-syncer daemon.",
   "graphTooltip": 0,
   "schemaVersion": 39,
   "tags": [
