@@ -28,6 +28,10 @@
         name = "tidal-syncer";
         type = "file";
         disableDeletion = true;
+        # Land in the same "tidal-syncer" folder the alert module creates
+        # (matched by title, so no duplicate folder). No folderUid: pinning a
+        # uid that differs from the alert folder's would fork a second folder.
+        folder = "tidal-syncer";
         options = {
           path = ./grafana;
           foldersFromFilesStructure = false;
