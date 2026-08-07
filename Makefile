@@ -25,7 +25,7 @@ DOCKER_IMAGE ?= tidal-syncer:local
 export PUID ?= $(shell id -u)
 export PGID ?= $(shell id -g)
 
-.phony: run build clean tests test-race lint docker-build docker-run up down ps logs login sync retry-failed health
+.phony: run build clean tests test-race lint docker-build docker-run up down ps logs login sync retry-failed health nix-build nix-test nix-vendor-hash
 
 run:
 	go run $(MAIN_PATH)
@@ -74,3 +74,33 @@ retry-failed:
 
 health:
 	docker compose run --rm tidal-syncer health
+
+# --- Nix packaging (deploy/package.nix + the NixOS service module) -----------
+# Override to pin a different nixpkgs, e.g.
+#   make nix-test NIXPKGS='(builtins.getFlake "/etc/nixos").inputs.nixpkgs'
+NIXPKGS ?= <nixpkgs>
+NIX_EXPR_PKGS = let pkgs = import $(NIXPKGS) { }; in
+
+nix-build:
+	nix build --impure --no-link --print-out-paths \
+		--expr '$(NIX_EXPR_PKGS) pkgs.callPackage ./deploy/package.nix { }'
+
+# Package-level, pure-eval and NixOS VM tests. The VM test needs /dev/kvm.
+# filterAttrs: callPackage splices `override`/`overrideDerivation` lambdas into
+# any attrset it returns, and linkFarmFromDrvs chokes on them.
+nix-test:
+	nix build --impure --no-link \
+		--expr '$(NIX_EXPR_PKGS) pkgs.linkFarmFromDrvs "tidal-syncer-nix-tests" (builtins.attrValues (pkgs.lib.filterAttrs (_: pkgs.lib.isDerivation) (pkgs.callPackage ./deploy/tests { })))'
+
+# Any go.mod/go.sum change invalidates vendorHash, and the failure surfaces only
+# when someone rebuilds the package (loudly, with the expected value). This
+# prints the correct hash to paste into deploy/package.nix.
+#
+# The fakeHash build is EXPECTED to fail with a mismatch, so a run without a
+# `got:` line means something unrelated broke (eval error, no network, $(NIXPKGS)
+# unresolvable) -- surface it and fail instead of reporting success.
+nix-vendor-hash:
+	@out=$$(nix build --impure --no-link \
+		--expr '$(NIX_EXPR_PKGS) (pkgs.callPackage ./deploy/package.nix { }).overrideAttrs (_: { vendorHash = pkgs.lib.fakeHash; })' 2>&1 || true); \
+	printf '%s\n' "$$out" | grep -E 'got: +sha256-' \
+		|| { printf '%s\n' "$$out"; echo "nix-vendor-hash: no hash mismatch reported - the build failed for another reason"; exit 1; }
