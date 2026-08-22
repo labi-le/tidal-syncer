@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/hashicorp/go-retryablehttp v0.7.8
-	github.com/mewkiz/flac v1.0.13
+	github.com/mewkiz/flac v1.0.14
 	github.com/prometheus/client_golang v1.24.1
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
