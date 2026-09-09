@@ -1,5 +1,7 @@
 # tidal-syncer
 
+[![lines of code](https://img.shields.io/endpoint?url=https%3A%2F%2Fghloc.vercel.app%2Fapi%2Flabi-le%2Ftidal-syncer%2Fbadge%3Ffilter%3D.go)](https://github.com/labi-le/tidal-syncer)
+
 Sync your TIDAL library to local storage.
 
 ## Quickstart (Docker)
