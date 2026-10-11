@@ -28,17 +28,17 @@ jobs:
           CHECK: vendorHash
         run: |
           for attempt in $(seq 1 60); do
-            # A heal job publishes a commit STATUS, not a check run. gh pr checks
-            # names it by its context but exposes its verdict as state rather than
-            # bucket, so match either field and normalise both shapes before
-            # deciding. Without this the poll sees "absent" for the very check
-            # heal just made green, and refuses to merge.
+            # gh pr checks folds a commit status into the same list as a check
+            # run, under the same name and with a populated bucket, so matching on
+            # name alone covers both the gate's CheckRun and a heal-published
+            # status. `context` is not a field this command accepts.
+            # `state` is the status-only fallback, which reports SUCCESS rather
+            # than the bucket's pass.
             state=$(gh pr checks "$PR_URL" \
-              --json name,context,bucket,state --jq "
-                map(select(.name == \"$CHECK\" or .context == \"$CHECK\"))
+              --json name,bucket,state --jq "
+                map(select(.name == \"$CHECK\"))
                 | .[0]
                 | (.bucket // (if .state == \"SUCCESS\" then \"pass\"
-                               elif .state == \"PENDING\" then \"pending\"
                                elif .state then \"fail\" else \"absent\" end))")
             case "$state" in
               pass)
