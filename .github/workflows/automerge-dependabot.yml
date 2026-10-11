@@ -38,7 +38,7 @@ jobs:
                 echo "::error::required check '$CHECK' is '$state' - refusing to merge"
                 exit 1 ;;
             esac
-            echo "waiting on '$CHECK': $state" >> "$GITHUB_STEP_SUMMARY"
+            echo "attempt $attempt on $CHECK: $state" >> "$GITHUB_STEP_SUMMARY"
             sleep 10
           done
           echo "::error::timed out waiting for '$CHECK'"

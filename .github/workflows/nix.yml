@@ -74,12 +74,22 @@ jobs:
         run: make nix-vendor-hash-check
 
   heal:
-    # Only a dependabot PR is worth auto-fixing: on a human PR the same push
+    # Runs only when the gate FAILED, which is the only state worth healing.
+    # `needs: gate` alone would skip this job on failure, so it must be paired
+    # with `always()`; the condition then narrows it back to that case. The job
+    # deliberately omits `cancelled` (a cancelled gate says nothing about the
+    # hash) and is restricted to dependabot, since on a human PR the same push
     # would rewrite a branch under the author, and on main there is no PR to
-    # update. Runs after gate, so a correct hash costs one skipped job.
+    # update. A green hash costs nothing here.
     name: refresh-vendorHash
     needs: gate
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
+    if: >-
+      ${{
+        always() &&
+        needs.gate.result == 'failure' &&
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.user.login == 'dependabot[bot]'
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -125,10 +135,15 @@ jobs:
       # and an extra commit leaves the dependency bump as a fixup of itself.
       - name: Push the refresh
         if: steps.refresh.outputs.changed == 'true'
+        env:
+          # Head ref via env, not interpolated into the script: actionlint flags
+          # inline use as a script-injection vector, and the value only needs to
+          # reach git as data.
+          BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$(basename "$GITHUB_REF_NAME")"
+          git checkout -B "$BRANCH"
           git add deploy/package.nix
           git commit --amend --no-edit
-          git push --force-with-lease
+          git push --force-with-lease origin "HEAD:$BRANCH"
