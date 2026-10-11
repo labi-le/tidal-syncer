@@ -108,6 +108,29 @@ imports = [ inputs.tidal-syncer.nixosModules.monitoring ];
 The dashboard JSON under `deploy/grafana/` can also be imported into any Grafana
 instance by hand.
 
+### Nix packaging
+
+All Go tooling must run through the repository's pinned toolchain (via `nix-shell`),
+and the app itself is built and run through Docker. Nix builds the deployable
+package. Any edit to `go.mod` or `go.sum` changes what `go mod download` resolves
+to, which invalidates `vendorHash` in `deploy/package.nix`:
+
+```sh
+make nix-vendor-hash        # prints the value to paste into deploy/package.nix
+```
+
+CI enforces it in both directions. `.github/workflows/nix.yml` runs
+`make nix-vendor-hash-check` on every PR and on `main`, so a stale hash is red
+rather than something a consumer discovers on their next rebuild. On a dependabot
+PR the same workflow also refreshes the hash and pushes it onto the PR branch, so
+the bump usually needs no manual step at all.
+
+The check runs against a pinned nixpkgs (`NIXPKGS_REV` in the Makefile, mirrored
+by `NIXPKGS_REV` in the workflow) rather than the moving channel, because the
+go-modules FOD hash is a function of nixpkgs' `go mod download` implementation
+and the Go toolchain it selects. Bump both deliberately, in one commit, then
+re-run `make nix-vendor-hash`.
+
 ## Querying the library (SQLite)
 
 Sync state lives in `data/tidal-syncer.db`. To list your most recently

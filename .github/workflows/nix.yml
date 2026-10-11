@@ -1,0 +1,134 @@
+# Keeps deploy/package.nix's vendorHash honest.
+#
+# vendorHash pins the output of the go-modules FOD. Every go.mod or go.sum edit
+# changes what `go mod download` resolves to, so every dependabot bump
+# invalidates it -- and because the FOD is only realised when the package is
+# built, the mismatch first shows up in a CONSUMER's rebuild, after the merge.
+#
+# Two jobs:
+#
+#   gate decides mergeability. A PR that touches go.mod, go.sum or
+#       deploy/package.nix with a wrong vendorHash is red.
+#   heal removes the manual step that keeps slipping. On a dependabot PR
+#       whose hash is wrong it refreshes the hash and pushes it back onto the
+#       PR branch, so the gate goes green on its own.
+#
+# Both also run on main, so a hand edit cannot sneak through either.
+
+name: nix
+
+on:
+  pull_request:
+    paths:
+      - go.mod
+      - go.sum
+      - deploy/**
+      - Makefile
+      - .github/workflows/nix.yml
+  push:
+    branches: [main]
+    paths:
+      - go.mod
+      - go.sum
+      - deploy/**
+      - Makefile
+      - .github/workflows/nix.yml
+  workflow_dispatch:
+
+concurrency:
+  # One run per ref: a superseded gate keeps no value, and this workflow writes
+  # to dependabot branches, so stale runs must not race newer ones.
+  group: nix-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The nixpkgs revision the consuming NixOS host builds this package with. The
+  # go-modules FOD hash is a function of nixpkgs' `go mod download`
+  # implementation and the Go toolchain it selects, so the check has to run
+  # against the host's revision or it drifts into false alarms as the channel
+  # moves. Mirrors NIXPKGS_REV in the Makefile; bump both together, in their own
+  # commit, then re-run `make nix-vendor-hash`.
+  NIXPKGS_REV: 643809054d65fdd466a63e3155b8c498cb483c04
+
+jobs:
+  gate:
+    name: vendorHash
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: cachix/install-nix-action@v34
+        with:
+          extra_nix_config: |
+            accept-flake-config = true
+
+      # The go-modules FOD only. The outer derivation's build product has no
+      # bearing on the hash, so this costs a module download and a directory
+      # copy instead of a Go compile and the test suite: low minutes, no
+      # self-hosted runner, and the FOD itself stays a sandboxed fixed-output
+      # build.
+      - name: Check vendorHash
+        run: make nix-vendor-hash-check
+
+  heal:
+    # Only a dependabot PR is worth auto-fixing: on a human PR the same push
+    # would rewrite a branch under the author, and on main there is no PR to
+    # update. Runs after gate, so a correct hash costs one skipped job.
+    name: refresh-vendorHash
+    needs: gate
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The PR head, so the refresh lands on the branch the gate judges and
+          # the automerge workflow then merges.
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - uses: cachix/install-nix-action@v34
+        with:
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - name: Refresh the vendorHash
+        id: refresh
+        run: |
+          want=$(make --no-print-directory nix-vendor-hash-print) || {
+            echo "::error::could not determine the expected vendorHash (see log)"
+            exit 1
+          }
+          have=$(sed -nE 's/.*vendorHash[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' deploy/package.nix)
+          if [ "$want" = "$have" ]; then
+            echo "hash already current: $have"
+            exit 0
+          fi
+          sed -i -E "s|(vendorHash[[:space:]]*=[[:space:]]*\")[^\"]*(\")|\1${want}\2|" deploy/package.nix
+          echo "wrote $want in place of $have" >> "$GITHUB_STEP_SUMMARY"
+          printf 'changed=true\n' >> "$GITHUB_OUTPUT"
+
+      # Push to the PR branch, never to main. A merge is the only thing that
+      # should land there, and it happens once the gate has re-run green.
+      #
+      # --force-with-lease rather than --force: the lease is this bot's own
+      # fetch from moments ago, so a dependabot or human commit landing on the
+      # same branch in the meantime fails the push instead of discarding it.
+      #
+      # --amend rather than a second commit: dependabot already opened this PR,
+      # and an extra commit leaves the dependency bump as a fixup of itself.
+      - name: Push the refresh
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$(basename "$GITHUB_REF_NAME")"
+          git add deploy/package.nix
+          git commit --amend --no-edit
+          git push --force-with-lease

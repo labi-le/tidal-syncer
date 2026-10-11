@@ -1,3 +1,8 @@
+# Merges dependabot PRs -- but only once the checks have actually run green.
+#
+# This is the constraint that keeps a bad vendorHash off main. nix.yml decides
+# whether a go.mod bump is acceptable; nothing here overrides that, so a red
+# gate fails this job and no merge happens.
 ---
 name: "Dependabot Automerge - Action"
 
@@ -14,13 +19,38 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
     steps:
-      - name: Merge the Dependabot PR
+      # Poll the named check until it resolves. Any non-pass outcome -- failure,
+      # cancellation, or a check that never ran -- fails the step, which is what
+      # stops a stale vendorHash from being merged.
+      - name: Wait for the vendorHash gate
+        env:
+          PR_URL: ${{github.event.pull_request.html_url}}
+          CHECK: vendorHash
         run: |
+          for attempt in $(seq 1 60); do
+            state=$(gh pr checks "$PR_URL" \
+              --json name,bucket --jq "map(select(.name == \"$CHECK\")) | .[0].bucket // \"absent\"")
+            case "$state" in
+              pass)
+                echo "check '$CHECK' is green" >> "$GITHUB_STEP_SUMMARY"
+                exit 0 ;;
+              fail | cancel | skipping)
+                echo "::error::required check '$CHECK' is '$state' - refusing to merge"
+                exit 1 ;;
+            esac
+            echo "waiting on '$CHECK': $state" >> "$GITHUB_STEP_SUMMARY"
+            sleep 10
+          done
+          echo "::error::timed out waiting for '$CHECK'"
+          exit 1
+
+      - name: Merge the Dependabot PR
+        env:
+          PR_URL: ${{github.event.pull_request.html_url}}
+        run: |
+          # Retry around the transient failures GitHub returns under load.
           for attempt in 1 2 3 4 5; do
             if gh pr merge --merge "$PR_URL"; then exit 0; fi
             sleep $((attempt * 5))
           done
           exit 1
-        env:
-          PR_URL: ${{github.event.pull_request.html_url}}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
