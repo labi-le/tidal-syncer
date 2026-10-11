@@ -97,6 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      statuses: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -156,3 +157,41 @@ jobs:
           git add deploy/package.nix
           git commit -m "nix: refresh vendorHash"
           git push --force-with-lease origin "HEAD:$BRANCH"
+
+      # Post-push verification, published as the vendorHash check.
+      #
+      # Both blockers observed on a real runner, in two probes:
+      #   - an amend rewrites the PR head so GitHub runs the follow-up workflow
+      #     with pull_requests 0 -- the check is never attached to the PR;
+      #   - a normal push does attach the run, but the pusher is
+      #     github-actions[bot], which GitHub gates behind first-time-contributor
+      #     approval, so the run stays action_required and publishes nothing.
+      # Either way the PR head ends up with no vendorHash check, the branch rule
+      # is unsatisfied, and the automerge poll waits on a check that never comes.
+      #
+      # So this job publishes the result itself, as a commit status on the sha it
+      # just pushed. A status carries the same context the gate uses, and the
+      # rule consults the PR head sha, which is exactly the one this writes to.
+      - name: Verify the refresh and report it
+        id: report
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          url="$GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID"
+          if make --no-print-directory nix-vendor-hash-check; then
+            gh api "repos/$REPO/statuses/$sha" \
+              -f state=success \
+              -f context=vendorHash \
+              -f description='vendorHash refreshed and verified' \
+              -f target_url="$url"
+          else
+            gh api "repos/$REPO/statuses/$sha" \
+              -f state=failure \
+              -f context=vendorHash \
+              -f description='vendorHash still wrong after refresh' \
+              -f target_url="$url"
+            echo "::error::refresh did not fix the hash"
+            exit 1
+          fi
