@@ -17,14 +17,14 @@
 
 name: nix
 
+# Deliberately unfiltered: the gate must publish a `vendorHash` check on EVERY
+# pull request, or a branch rule requiring that check would block all the PRs
+# that legitimately do not touch go.mod (a doc fix, a workflow tweak). The check
+# is a few seconds, so filtering it for speed buys nothing and costs the ability
+# to make it required. `main` keeps its path filter: only the files that can
+# actually invalidate the hash are worth a direct-push check there.
 on:
   pull_request:
-    paths:
-      - go.mod
-      - go.sum
-      - deploy/**
-      - Makefile
-      - .github/workflows/nix.yml
   push:
     branches: [main]
     paths:
