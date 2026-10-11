@@ -28,12 +28,13 @@ jobs:
           CHECK: vendorHash
         run: |
           for attempt in $(seq 1 60); do
-            # gh pr checks folds a commit status into the same list as a check
-            # run, under the same name and with a populated bucket, so matching on
-            # name alone covers both the gate's CheckRun and a heal-published
-            # status. `context` is not a field this command accepts.
-            # `state` is the status-only fallback, which reports SUCCESS rather
-            # than the bucket's pass.
+            # gh pr checks folds the gate's check run and any commit status
+            # into one list, keyed by the same name, both with a populated
+            # bucket. Verified against the live CLI: a heal-published status
+            # appears as name=vendorHash bucket=pass, exactly like the gate.
+            # Matching on name alone therefore covers both, and `context` is
+            # not a field this command accepts. The `state` fallback is kept
+            # only as belt-and-braces; the observed shapes always set bucket.
             state=$(gh pr checks "$PR_URL" \
               --json name,bucket,state --jq "
                 map(select(.name == \"$CHECK\"))
