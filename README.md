@@ -125,6 +125,13 @@ rather than something a consumer discovers on their next rebuild. On a dependabo
 PR the same workflow also refreshes the hash and pushes it onto the PR branch, so
 the bump usually needs no manual step at all.
 
+The check is deliberately unfiltered for PRs. It costs a couple of seconds, and
+a path filter would mean unrelated PRs never publish a `vendorHash` check -- which
+would stop a branch rule from requiring it. `main` requires it via a repository
+ruleset, so neither a merged PR nor a direct push can land a bad hash. The gate
+also fails closed: if `nix` is missing or the pin cannot be resolved it reports no
+verdict and exits non-zero, rather than passing silently.
+
 The check runs against a pinned nixpkgs (`NIXPKGS_REV` in the Makefile, mirrored
 by `NIXPKGS_REV` in the workflow) rather than the moving channel, because the
 go-modules FOD hash is a function of nixpkgs' `go mod download` implementation
