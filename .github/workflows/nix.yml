@@ -36,10 +36,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # One run per ref: a superseded gate keeps no value, and this workflow writes
-  # to dependabot branches, so stale runs must not race newer ones.
+  # One run per ref, but NEVER cancel a run mid-flight: the heal job force-pushes
+  # from inside a run, and that push starts the next run on the same ref group.
+  # With cancel-in-progress the old run can be killed while heal is still working,
+  # and the post-heal run that publishes the vendorHash check the branch rule needs
+  # is the one that gets dropped -- leaving the PR with no check and no way to go
+  # green. Queueing instead costs at most one queued run per ref.
   group: nix-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -127,12 +131,17 @@ jobs:
       # Push to the PR branch, never to main. A merge is the only thing that
       # should land there, and it happens once the gate has re-run green.
       #
-      # --force-with-lease rather than --force: the lease is this bot's own
-      # fetch from moments ago, so a dependabot or human commit landing on the
-      # same branch in the meantime fails the push instead of discarding it.
+      # A plain commit rather than an amend. Amending rewrites the PR head, and
+      # GitHub then treats the new tip as an unrelated ref: a real post-heal push
+      # was recorded with zero associated pull requests and produced no
+      # vendorHash check at all, so the PR never went green and the branch rule
+      # blocked it indefinitely. A normal commit on top keeps the PR bound to its
+      # head, the gate re-runs, and the ruleset sees a result. The extra commit
+      # is cosmetic, since the branch dissolves at merge regardless.
       #
-      # --amend rather than a second commit: dependabot already opened this PR,
-      # and an extra commit leaves the dependency bump as a fixup of itself.
+      # --force-with-lease rather than --force: the lease is this bot's own fetch
+      # from moments ago, so a dependabot or human commit landing on the same
+      # branch in the meantime fails the push instead of discarding it.
       - name: Push the refresh
         if: steps.refresh.outputs.changed == 'true'
         env:
@@ -145,5 +154,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$BRANCH"
           git add deploy/package.nix
-          git commit --amend --no-edit
+          git commit -m "nix: refresh vendorHash"
           git push --force-with-lease origin "HEAD:$BRANCH"
