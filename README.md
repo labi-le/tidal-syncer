@@ -178,3 +178,5 @@ nix-shell --run "sqlite3 -header -column data/tidal-syncer.db"
 - `genre` is a `;`-joined list — filter with e.g. `WHERE genre LIKE '%Metal%'`.
 - `added_at` is the favorite-add date; use `ORDER BY t.updated_at DESC` for
   download order instead. The join skips failed tracks (they have no file).
+
+<!-- probe -->
