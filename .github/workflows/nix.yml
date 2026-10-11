@@ -160,18 +160,17 @@ jobs:
 
       # Post-push verification, published as the vendorHash check.
       #
-      # Both blockers observed on a real runner, in two probes:
-      #   - an amend rewrites the PR head so GitHub runs the follow-up workflow
-      #     with pull_requests 0 -- the check is never attached to the PR;
-      #   - a normal push does attach the run, but the pusher is
-      #     github-actions[bot], which GitHub gates behind first-time-contributor
-      #     approval, so the run stays action_required and publishes nothing.
-      # Either way the PR head ends up with no vendorHash check, the branch rule
-      # is unsatisfied, and the automerge poll waits on a check that never comes.
+      # Observed on a real runner: the follow-up run for a push authored by
+      # github-actions[bot] goes to action_required with zero jobs, so it
+      # never publishes a vendorHash check. The PR head then has no check,
+      # the branch rule is unsatisfied, and the automerge poll waits on a
+      # check that never arrives.
       #
-      # So this job publishes the result itself, as a commit status on the sha it
-      # just pushed. A status carries the same context the gate uses, and the
-      # rule consults the PR head sha, which is exactly the one this writes to.
+      # So this job publishes the result itself, as a commit status on the sha
+      # it just pushed. A status satisfies the same vendorHash context the rule
+      # requires, and the rule consults the PR head sha -- exactly this one.
+      # Confirmed live: PR #28 carried no vendorHash CheckRun, only this status,
+      # and was mergeable.
       - name: Verify the refresh and report it
         id: report
         env:
