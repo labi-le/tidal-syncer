@@ -139,6 +139,26 @@ go-modules FOD hash is a function of nixpkgs' `go mod download` implementation
 and the Go toolchain it selects. Bump both deliberately, in one commit, then
 re-run `make nix-vendor-hash`.
 
+#### `main` is PR-only
+
+The same rule that rejects a stale hash also means `main` cannot be pushed to
+directly. Pushing a new commit is refused:
+
+```
+remote: - Required status check "vendorHash" is expected.
+ ! [remote rejected] HEAD -> main (push declined due to repository rule violations)
+```
+
+This is a chicken-and-egg. The rule demands a `vendorHash` check on the commit
+being accepted, but the workflow that publishes that check is triggered *by* a
+push, so it cannot run before the push is accepted. A raw push can never
+bootstrap its own check.
+
+A pull request is unaffected, because GitHub writes the merge commit directly on
+`main`, where the check has time to appear. **Land every change on `main` through
+a pull request.** An up-to-date no-op push (one that adds no new commit) still
+succeeds, so this is not a blanket lock on the branch.
+
 ## Querying the library (SQLite)
 
 Sync state lives in `data/tidal-syncer.db`. To list your most recently
