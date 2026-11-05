@@ -19,9 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
     steps:
-      # Poll the named check until it resolves. Any non-pass outcome -- failure,
-      # cancellation, or a check that never ran -- fails the step, which is what
-      # stops a stale vendorHash from being merged.
+      # Poll the named check until it resolves. A failure is NOT terminal: a
+      # wrong vendorHash is red for exactly one run, until the heal job pushes
+      # the corrected hash, and the next poll sees it green. Cancellation and
+      # skipping are terminal, and so is the timeout below. Heal pushes with
+      # GITHUB_TOKEN, which cannot trigger another run, so this loop is the only
+      # thing that re-reads the check after the fix.
       - name: Wait for the vendorHash gate
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
@@ -46,7 +49,7 @@ jobs:
               pass)
                 echo "check '$CHECK' is green" >> "$GITHUB_STEP_SUMMARY"
                 exit 0 ;;
-              fail | cancel | skipping)
+              cancel | skipping)
                 echo "::error::required check '$CHECK' is '$state' - refusing to merge"
                 exit 1 ;;
             esac
