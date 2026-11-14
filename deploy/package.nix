@@ -36,7 +36,7 @@ buildGo126Module (finalAttrs: {
     ];
   };
 
-  vendorHash = "sha256-SP1nozwxzAE1LlxKw0UtEOBGZUfg40noafh9cZuaBgQ=";
+  vendorHash = "sha256-EhRkohkAXb9ZTaJ6UGxIlLQ7UneIEjZwEH+zyGYLlHE=";
 
   # The sole `package main` in the tree. `go install ./cmd` therefore names the
   # binary after its directory, hence the rename in postInstall.
